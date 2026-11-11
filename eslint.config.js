@@ -32,6 +32,9 @@ export default tseslint.config(
         },
       },
     },
-    rules: { 'local/no-comments': 'error' },
+    rules: {
+      'local/no-comments': 'error',
+      'max-lines': ['error', { max: 500 }],
+    },
   },
 );

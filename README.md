@@ -83,6 +83,6 @@ npm pack --dry-run
 
 本地开发和手动测试使用 `npm run dev`，该命令显式传入 `--home .codexplus`，将配置和已保存凭证放在项目根目录的 `.codexplus/` 中；该目录已加入 Git 忽略规则。
 
-`check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 强制禁止 JavaScript / TypeScript 中的行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
+`check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
 
 测试使用临时目录和模拟账号接口，覆盖字段过滤、缺失字段和 `null` 保留、同邮箱更新、离线切换、失败时保护现有文件、配置写入回滚、文件权限和禁止注释规则，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行相同检查。实际账号接口仍需要用户自己的有效凭证进行联网验证。
