@@ -4,10 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerOptions as SecureOptions } from 'node:https';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { secretsMatch } from './local-codes.js';
-import { AccessStore } from './access.js';
+import { AccessStore, secretsMatch } from './access.js';
 import { isRecord, parseAuth } from './auth.js';
-import { consumeLocalCode, createLocalCode, isLocalPurpose, isNonce, localEndpoint } from './local-codes.js';
 import { ServiceError, parseCredential } from './protocol.js';
 import { CredentialStore } from './store.js';
 
@@ -42,10 +40,6 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   }
 }
 
-function loopback(address: string | undefined): boolean {
-  return address === '::1' || /^127\./u.test(address ?? '') || /^::ffff:127\./u.test(address ?? '');
-}
-
 export async function startServer({
   home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, sessionToken, accountRequest = fetch,
 }: { home?: string; host?: string; port?: number; tls?: SecureOptions; sessionToken?: string; accountRequest?: typeof fetch } = {}): Promise<{
@@ -60,44 +54,6 @@ export async function startServer({
       throw new HttpError(400, '请输入客户端名称（最多 100 字符）。');
     }
     return value.trim();
-  }
-
-  async function localRoute(request: IncomingMessage, path: string, body: Record<string, unknown>): Promise<unknown> {
-    if (path === '/v1/local/challenge') {
-      if (!isLocalPurpose(body.purpose) || !isNonce(body.nonce)) {
-        throw new HttpError(400, '本机验证用途或随机数无效。');
-      }
-      const id = await createLocalCode(home, body.purpose, body.nonce, localEndpoint(request.socket.localAddress, request.socket.localPort));
-      if (id === null) {
-        throw new HttpError(429, '本机验证请求过多，请稍后重试。');
-      }
-      return { id };
-    }
-    const pairing = path === '/v1/local/pair';
-    if (!await consumeLocalCode(home, body.proof, pairing ? 'pair' : 'admin')) {
-      throw new HttpError(403, '本机验证失败：客户端或管理命令需要与服务端使用同一系统用户和同一 --home 目录。');
-    }
-    if (pairing) {
-      return await access.addClient(clientName(body.name));
-    }
-    if (path === '/v1/admin/pair') {
-      return await access.createPair();
-    }
-    if (path === '/v1/admin/clients') {
-      return { clients: await access.list() };
-    }
-    if (path === '/v1/admin/revoke') {
-      if (typeof body.id !== 'string') {
-        throw new HttpError(400, '请输入客户端 ID。');
-      }
-      try {
-        await access.revoke(body.id);
-      } catch {
-        throw new HttpError(400, '撤销失败：客户端不存在，或服务端无法保存授权。');
-      }
-      return { ok: true };
-    }
-    throw new HttpError(404, '未找到服务端接口。');
   }
 
   async function route(request: IncomingMessage, body: Record<string, unknown>): Promise<unknown> {
@@ -118,12 +74,6 @@ export async function startServer({
       } catch {
         throw new HttpError(400, '配对失败：配对码无效、已过期、已使用，或服务端无法保存授权。');
       }
-    }
-    if (request.method === 'POST' && (path.startsWith('/v1/local/') || path.startsWith('/v1/admin/'))) {
-      if (!loopback(request.socket.remoteAddress)) {
-        throw new HttpError(403, '本机验证和管理操作只接受回环连接。');
-      }
-      return await localRoute(request, path, body);
     }
     const authorization = request.headers.authorization ?? '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';

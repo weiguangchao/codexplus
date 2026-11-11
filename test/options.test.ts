@@ -45,9 +45,8 @@ test('serve 启动服务端，默认固定端口，管理命令默认连接本�
   assert.deepEqual(parseCommand(['serve']), { kind: 'serve', home, host: '127.0.0.1', port: 47831 });
   assert.deepEqual(parseCommand(['serve', '--host', '0.0.0.0', '--port', '8443', '--tls-cert', 'c.pem', '--tls-key', 'k.pem']),
     { kind: 'serve', home, host: '0.0.0.0', port: 8443, tlsCert: 'c.pem', tlsKey: 'k.pem' });
-  assert.deepEqual(parseCommand(['serve', 'pair', '--port', '5000']), { kind: 'admin', home, url: 'http://127.0.0.1:5000', action: 'pair' });
-  assert.deepEqual(parseCommand(['serve', 'revoke', 'abc', '--server', 'https://localhost:8443']),
-    { kind: 'admin', home, url: 'https://localhost:8443', action: 'revoke', id: 'abc' });
+  assert.deepEqual(parseCommand(['serve', 'pair']), { kind: 'admin', home, action: 'pair' });
+  assert.throws(() => parseCommand(['serve', 'pair', '--port', '5000']), /不能用于此命令/u);
   assert.deepEqual(parseCommand(['-h']), { kind: 'help' });
 });
 

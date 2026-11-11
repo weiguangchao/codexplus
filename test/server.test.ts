@@ -4,26 +4,19 @@ import { connect } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { AccessStore } from '../src/access.js';
-import { consumeLocalCode, createLocalCode, localCodesPath } from '../src/local-codes.js';
 import { requestService, serverUrl } from '../src/protocol.js';
 import { runAdmin } from '../src/serve.js';
 import { admin, freePort, pairCode, standalone, temporaryHome } from './helpers.js';
 
-test('管理命令需要同目录的本机验证文件，配对客户端令牌和伪造验证码都不能管理', async (context) => {
+test('废弃本机和管理接口不创建任何文件', async (context) => {
   const home = await temporaryHome(context);
-  const other = await temporaryHome(context);
   const server = await standalone(context, home);
-  const { token } = await new AccessStore(home).addClient('客户端');
-  await assert.rejects(admin(server.url, other, 'pair'), /无法读取本机验证文件/u);
-  for (const path of ['pair', 'clients', 'revoke']) {
-    await assert.rejects(requestService(server.url, `/v1/admin/${path}`, token, {}), /本机验证失败/u);
-    await assert.rejects(requestService(server.url, `/v1/admin/${path}`, undefined,
-      { proof: { id: '00000000-0000-4000-8000-000000000000', code: 'forged' } }), /本机验证失败/u);
+  const before = await readdir(home);
+  for (const path of ['/v1/local/challenge', '/v1/admin/pair']) {
+    const response = await fetch(`${server.url}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.ok([401, 404].includes(response.status));
   }
-  await assert.rejects(requestService(server.url, '/v1/local/pair', undefined, { proof: { id: '../server-access', code: 'x' }, name: 'x' }), /本机验证失败/u);
-  const result = await admin(server.url, home, 'clients') as { clients: { name: string }[] };
-  assert.deepEqual(result.clients.map((client) => client.name), ['客户端']);
-  assert.equal('digest' in (result.clients[0] ?? {}), false);
+  assert.deepEqual(await readdir(home), before);
 });
 
 test('管理命令输出配对码、客户端列表和撤销结果，服务端未运行时报错', async (context) => {
@@ -31,42 +24,15 @@ test('管理命令输出配对码、客户端列表和撤销结果，服务端�
   const server = await standalone(context, home);
   const logs: string[] = [];
   const log = (message: string) => logs.push(message);
-  await runAdmin({ kind: 'admin', home, url: server.url, action: 'clients' }, log);
-  await runAdmin({ kind: 'admin', home, url: server.url, action: 'pair' }, log);
+  await runAdmin({ kind: 'admin', home, action: 'clients' }, log);
+  await runAdmin({ kind: 'admin', home, action: 'pair' }, log);
   assert.match(logs.join('\n'), /暂无已配对客户端[\s\S]*配对码：[A-Za-z0-9_-]{22}/u);
   const { client } = await new AccessStore(home).addClient('笔记本');
-  await runAdmin({ kind: 'admin', home, url: server.url, action: 'revoke', id: client.id }, log);
+  await runAdmin({ kind: 'admin', home, action: 'revoke', id: client.id }, log);
   assert.match(logs.at(-1) ?? '', /已撤销/u);
-  await assert.rejects(runAdmin({ kind: 'admin', home, url: server.url, action: 'revoke', id: client.id }, log), /撤销失败/u);
+  await assert.rejects(runAdmin({ kind: 'admin', home, action: 'revoke', id: client.id }, log), /未找到/u);
   await server.close();
-  await assert.rejects(runAdmin({ kind: 'admin', home, url: server.url, action: 'pair' }, log), /无法连接 codexplus 服务端/u);
-});
-
-test('本机验证码只能使用一次、绑定用途、会过期，待用数量有上限', async (context) => {
-  const home = await temporaryHome(context);
-  const now = Date.now();
-  const nonce = 'n'.repeat(43);
-  const read = async (id: string) => JSON.parse(await readFile(join(localCodesPath(home), `${id}.json`), 'utf8')) as { code: string };
-  const id = await createLocalCode(home, 'pair', nonce, '127.0.0.1:1', now);
-  assert.ok(id);
-  const { code } = await read(id);
-  assert.equal(await consumeLocalCode(home, { id, code }, 'pair', now), true);
-  assert.equal(await consumeLocalCode(home, { id, code }, 'pair', now), false);
-  const admin = await createLocalCode(home, 'admin', nonce, '127.0.0.1:1', now);
-  assert.ok(admin);
-  const adminCode = (await read(admin)).code;
-  assert.equal(await consumeLocalCode(home, { id: admin, code: adminCode }, 'pair', now), false);
-  assert.equal(await consumeLocalCode(home, { id: admin, code: adminCode }, 'admin', now), false);
-  const expired = await createLocalCode(home, 'admin', nonce, '127.0.0.1:1', now);
-  assert.ok(expired);
-  assert.equal(await consumeLocalCode(home, { id: expired, code: (await read(expired)).code }, 'admin', now + 60_000), false);
-  assert.equal(await consumeLocalCode(home, { id: '../server-access', code: 'x' }, 'admin', now), false);
-  for (let index = 0; index < 32; index += 1) {
-    assert.ok(await createLocalCode(home, 'verify', nonce, '127.0.0.1:1', now));
-  }
-  assert.equal(await createLocalCode(home, 'verify', nonce, '127.0.0.1:1', now), null);
-  assert.ok(await createLocalCode(home, 'verify', nonce, '127.0.0.1:1', now + 60_000));
-  assert.equal((await readdir(localCodesPath(home))).length, 1);
+  await runAdmin({ kind: 'admin', home, action: 'pair' }, log);
 });
 
 test('服务端每次都从磁盘读取授权，其他进程或手工修改立即生效', async (context) => {
@@ -183,8 +149,6 @@ test('拒绝跨站请求、无效请求、过大内容和路径穿越，错误�
   }
   const wrongType = await fetch(`${server.url}/v1/pair`, { method: 'POST', body: '{}' });
   assert.equal(wrongType.status, 415);
-  await assert.rejects(requestService(server.url, '/v1/local/challenge', undefined, { purpose: 'root', nonce: 'n'.repeat(43) }), /用途或随机数无效/u);
-  await assert.rejects(requestService(server.url, '/v1/local/challenge', undefined, { purpose: 'verify' }), /用途或随机数无效/u);
   await assert.rejects(requestService(server.url, '/v1/credentials/download', token, { type: 'codex', email: '../a@example.com' }), /邮箱无效/u);
 });
 

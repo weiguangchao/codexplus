@@ -1,9 +1,14 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import { withLock } from './lock.js';
 import { isRecord } from './auth.js';
 import { readOptional, writeAtomic } from './files.js';
-import { secretsMatch } from './local-codes.js';
+
+export function secretsMatch(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export interface PairedClient {
   id: string;

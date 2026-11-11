@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { CredentialClient } from '../src/client.js';
-import { requestLocalProof } from '../src/local-codes.js';
-import { requestService } from '../src/protocol.js';
+import { AccessStore } from '../src/access.js';
 import { startServer } from '../src/server.js';
 
 export const original = { tokens: { access_token: 'fake-access', refresh_token: 'fake-refresh', extra: 'discard' }, extra: 'discard' };
@@ -69,14 +68,14 @@ export function makeClient(context: TestContext, userHome: string, home = join(u
   return { client, started };
 }
 
-export async function admin(url: string, home: string, action: string, body: Record<string, unknown> = {}): Promise<unknown> {
-  const proof = await requestLocalProof(url, home, 'admin');
-  if (proof === null) {
-    throw new Error('无法读取本机验证文件。');
-  }
-  return await requestService(url, `/v1/admin/${action}`, undefined, { proof, ...body });
+export async function admin(_url: string, home: string, action: string, body: Record<string, unknown> = {}): Promise<unknown> {
+  const store = new AccessStore(home);
+  if (action === 'pair') return await store.createPair();
+  if (action === 'clients') return { clients: await store.list() };
+  await store.revoke(String(body.id));
+  return { ok: true };
 }
 
-export async function pairCode(url: string, home: string): Promise<string> {
-  return (await admin(url, home, 'pair') as { code: string }).code;
+export async function pairCode(_url: string, home: string): Promise<string> {
+  return (await new AccessStore(home).createPair()).code;
 }

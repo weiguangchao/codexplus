@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { defaultPort, localUrl, serverUrl } from './protocol.js';
+import { defaultPort, serverUrl } from './protocol.js';
 
 export type AdminAction = 'pair' | 'clients' | 'revoke';
 
@@ -9,12 +9,12 @@ export type Command =
   | { kind: 'help' }
   | { kind: 'client'; home: string; target?: string }
   | { kind: 'serve'; home: string; host: string; port: number; tlsCert?: string; tlsKey?: string }
-  | { kind: 'admin'; home: string; url: string; action: AdminAction; id?: string };
+  | { kind: 'admin'; home: string; action: AdminAction; id?: string };
 
 export const usage = [
   'codexplus [--server 地址 | --local] [--home 目录]',
   'codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]',
-  'codexplus serve pair|clients|revoke <客户端ID> [--port 端口 | --server 本机地址] [--home 目录]',
+  'codexplus serve pair|clients|revoke <客户端ID> [--home 目录]',
 ].join('\n');
 
 function resolveHome(value: string | undefined): string {
@@ -84,7 +84,6 @@ export function parseCommand(args: string[]): Command {
   if (!['pair', 'clients', 'revoke'].includes(action) || rest.length > 0 || (action === 'revoke') !== (id !== undefined)) {
     throw new Error('命令无效，请运行 codexplus --help。');
   }
-  allow('home', 'port', 'server');
-  const url = values.server !== undefined ? serverUrl(values.server, true) : localUrl(port ?? defaultPort);
-  return { kind: 'admin', home, url, action: action as AdminAction, ...(id === undefined ? {} : { id }) };
+  allow('home');
+  return { kind: 'admin', home, action: action as AdminAction, ...(id === undefined ? {} : { id }) };
 }

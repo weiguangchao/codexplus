@@ -26,7 +26,7 @@ npm install --global .
 ```sh
 codexplus [--server 地址 | --local] [--home 目录]
 codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]
-codexplus serve pair|clients|revoke <客户端ID> [--port 端口 | --server 本机地址] [--home 目录]
+codexplus serve pair|clients|revoke <客户端ID> [--home 目录]
 ```
 
 端口固定，默认 `47831`，可用 `--port` 指定。`--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。
@@ -66,13 +66,7 @@ codexplus serve --host 0.0.0.0 --port 47831 --tls-cert /path/to/cert.pem --tls-k
 codexplus serve pair
 ```
 
-管理命令通过 HTTP 连接本机服务端，每次执行前用服务端目录中的一次性管理码证明身份，不保存长期管理密钥。服务端使用 TLS 时，用 `--server` 指定本机 HTTPS 地址：
-
-```sh
-codexplus serve pair --server https://localhost:47831
-```
-
-TLS 证书必须受 Node.js 信任并匹配所用主机名，包括本机管理地址。使用私有 CA 时可通过 `NODE_EXTRA_CA_CERTS` 指定 CA 文件；程序不提供跳过证书校验的选项。
+管理命令直接在目录锁内读写授权文件，服务端没有运行也可用；仅接受 `--home`，不接受 `--port`、`--server`。TLS 证书必须受 Node.js 信任并匹配主机名；私有 CA 可通过 NODE_EXTRA_CA_CERTS 指定。
 
 配对码有效期为五分钟，只能使用一次，生成新码会使旧码失效。客户端运行：
 
@@ -82,7 +76,7 @@ codexplus --server https://codexplus.example.com
 
 首次连接时输入配对码（输入隐藏）和客户端名称。客户端会记住所有连接过的服务端及其令牌，并记住当前连接；之后直接运行 `codexplus` 即连接上次的服务端，用 `--server` 切换到已配对的服务端时无需再次配对。重启客户端或服务端不需要重新配对。
 
-配对后的客户端可以列出、添加和下载该服务端的全部账户凭证，不能管理配对或撤销其他客户端。本机验证和管理接口只接受回环连接。
+配对后的客户端可以列出、添加和下载该服务端的全部账户凭证，不能管理配对或撤销其他客户端。HTTP 不提供本机验证或管理接口。
 
 在服务端查看和撤销客户端授权：
 
@@ -101,11 +95,10 @@ codexplus serve revoke <客户端ID>
 | 服务端 | 凭证索引，沿用原格式 | `<home>/config.json` |
 | 服务端 | 已保存账户凭证（明文，依赖文件权限保护） | `<home>/credentials/codex-<邮箱>.json` |
 | 服务端 | 配对码及客户端令牌的哈希 | `<home>/server-access.json` |
-| 服务端 | 一次性本机配对码和管理码 | `<home>/local-codes/` |
 | 客户端 | 版本 2：当前 local 或 URL、远程令牌及同步基线 | `<home>/client.json` |
 | 客户端 | 当前供本机 Codex 使用的账户凭证 | `~/.codex/auth.json` |
 
-`<home>` 是各自的 `--home` 目录，默认 `~/.codexplus`。客户端只写自己的 `client.json` 和 `~/.codex/auth.json`；凭证库、授权和一次性验证码由服务端写入服务端目录。客户端自带的本地服务端使用客户端的 `--home`，因此两类文件可以位于同一目录。客户端添加文件时 `~/` 的含义、进程检测和 `~/.codex/auth.json` 的写入目标以操作系统用户为准，不会被 `--home` 改变。
+`<home>` 是各自的 `--home` 目录，默认 `~/.codexplus`。客户端只写自己的 `client.json` 和 `~/.codex/auth.json`；凭证库和授权由服务端写入服务端目录。客户端自带的本地服务端使用客户端的 `--home`，因此两类文件可以位于同一目录。客户端添加文件时 `~/` 的含义、进程检测和 `~/.codex/auth.json` 的写入目标以操作系统用户为准，不会被 `--home` 改变。
 
 服务端每次请求都从磁盘读取 `server-access.json`，不保留内存副本，手工修改立即生效。同目录的多个进程通过瞬时 `<home>/.lock` 串行读写；锁等待最多 10 秒，超过 30 秒的残留会回收。账号网络查询在锁外，健康接口不受慢查询阻塞。Windows 原子重命名遇到外部读取占用时重试约 2 秒。
 
@@ -152,4 +145,4 @@ npm pack --dry-run
 
 `check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
 
-测试使用独立临时主目录、真实本机 HTTP 服务和模拟账号查询接口，覆盖字段过滤、原有凭证兼容、存储回滚、自带本地服务端、独立本机端口、版本检查、远程配对、多服务端记忆、一次性及过期配对码和本机验证码、并发上传、重启后认证、授权撤销及重新配对、请求限制、客户端本地写入和 Unix 文件权限，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行检查。
+测试使用独立临时主目录、真实本机 HTTP 服务和模拟账号查询接口，覆盖字段过滤、原有凭证兼容、存储回滚、自带本地服务端、独立本机端口、版本检查、远程配对、多服务端记忆、一次性及过期配对码、离线管理、并发上传、重启后认证、授权撤销及重新配对、请求限制、客户端本地写入和 Unix 文件权限，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行检查。
