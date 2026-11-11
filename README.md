@@ -1,1 +1,74 @@
 # codexplus
+
+用交互式终端菜单保存和切换已经登录的 Codex / ChatGPT 凭证。
+
+## 安装
+
+需要 Node.js 22.22.2+（22.x）、24.15.0+（24.x）或 26+。
+
+```sh
+npm ci
+npm run build
+npm install --global .
+codexplus
+```
+
+也可以使用 `npm run dev` 启动开发版本。安装后直接运行 `codexplus`，不接受子命令或位置参数。
+
+## 使用
+
+主菜单只有两个选项，使用方向键选择，回车确认，Ctrl+C 取消。
+
+- **添加凭证**：输入已有 `auth.json` 的路径，默认为 `~/.codex/auth.json`。支持绝对路径、相对路径和 `~/`。程序使用 `tokens.access_token` 查询邮箱，并将原始文件内容保存为 `codex-<邮箱>.json`。同一邮箱再次添加会更新已有文件，不会切换当前账号。
+- **切换凭证**：从已保存的邮箱列表中选择账号，将对应的原始文件写入 `~/.codex/auth.json`。切换无需联网；没有已保存凭证时会提示先添加。
+
+一次运行完成一次添加或切换；完成后退出。失败时以非零状态退出，Ctrl+C 取消时正常退出。
+
+## 文件位置
+
+| 用途 | 路径 |
+| --- | --- |
+| 配置与凭证索引 | `~/.codexplus/config.json` |
+| 已保存凭证 | `~/.codexplus/credentials/codex-<邮箱>.json` |
+| 切换目标 | `~/.codex/auth.json` |
+
+首次成功添加时创建配置，格式如下。配置不保存 token。
+
+```json
+{
+  "version": 1,
+  "credentials": [
+    { "type": "codex", "email": "person@example.com" }
+  ]
+}
+```
+
+目前仅支持 `codex` 类型和通过 ChatGPT 登录生成、包含 `tokens.access_token` 的 `auth.json`，不支持只有 API key 的文件。凭证内容不做重新序列化，保留 refresh token、ID token 以及其他原始字段。
+
+文件通过同目录临时文件和重命名写入。Unix 上新建的配置和凭证权限为 `0600`，新建目录为 `0700`。读取文件、校验或账号查询失败时不更新已有配置和凭证。配置提交失败时恢复本次替换的凭证。
+
+## 账号查询与 Codex 配置
+
+添加时请求 `https://chatgpt.com/backend-api/me`，发送已有 access token，存在 `tokens.account_id` 时同时发送 `ChatGPT-Account-Id`。邮箱使用响应的顶层 `email` 字段。请求超时为 15 秒，不跟随重定向，错误信息不打印 token 或接口响应内容。
+
+该账号资料接口没有公开的稳定契约，可能因接口变更、token 权限或访问限制而失败。失败时会提示错误，不会退回到本地解码 token 或凭空生成邮箱。程序不登录、不刷新 token；过期后需要在 Codex 中重新登录，再重新添加。
+
+切换目标固定为 `~/.codex/auth.json`，不跟随 `CODEX_HOME`。Codex 需要使用文件凭证存储，并使用默认配置目录；如果当前配置使用系统钥匙串，需要自行设置 `~/.codex/config.toml`：
+
+```toml
+cli_auth_credentials_store = "file"
+```
+
+Codex 的存储方式说明见 [OpenAI 官方认证文档](https://developers.openai.com/codex/auth/)。本工具不会修改 Codex 的其他配置。切换前应结束正在运行的 Codex 会话，再启动新会话使用所选账号。保存的文件是添加时的快照，Codex 后续对当前登录的 token 刷新不会自动同步到已保存文件。
+
+## 开发与验证
+
+```sh
+npm ci
+npm run check
+npm pack --dry-run
+```
+
+`check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 强制禁止 JavaScript / TypeScript 中的行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
+
+测试使用临时目录和模拟账号接口，覆盖原样保存、同邮箱更新、离线切换、失败时保护现有文件、配置写入回滚、文件权限和禁止注释规则，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行相同检查。实际账号接口仍需要用户自己的有效凭证进行联网验证。
