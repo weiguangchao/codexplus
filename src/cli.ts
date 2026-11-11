@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { input, select } from '@inquirer/prompts';
 import { CredentialStore } from './store.js';
+import { switchCredential } from './switch.js';
 
 async function main(): Promise<void> {
   if (process.argv.length > 2) {
@@ -39,8 +40,7 @@ async function main(): Promise<void> {
     message: '选择要切换的账号',
     choices: credentials.map((entry) => ({ name: entry.email, value: entry })),
   });
-  await store.switch(credential);
-  console.log(`已切换到：${credential.email}`);
+  await switchCredential(store, credential);
 }
 
 main().catch((error: unknown) => {
