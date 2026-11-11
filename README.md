@@ -19,8 +19,8 @@ codexplus
 
 主菜单只有两个选项，使用方向键选择，回车确认，Ctrl+C 取消。
 
-- **添加凭证**：输入已有 `auth.json` 的路径，默认为 `~/.codex/auth.json`。支持绝对路径、相对路径和 `~/`。程序使用 `tokens.access_token` 查询邮箱，并将原始文件内容保存为 `codex-<邮箱>.json`。同一邮箱再次添加会更新已有文件，不会切换当前账号。
-- **切换凭证**：从已保存的邮箱列表中选择账号，将对应的原始文件写入 `~/.codex/auth.json`。切换无需联网；没有已保存凭证时会提示先添加。
+- **添加凭证**：输入已有 `auth.json` 的路径，默认为 `~/.codex/auth.json`。支持绝对路径、相对路径和 `~/`。程序使用 `tokens.access_token` 查询邮箱，并将经过字段过滤的凭证保存为 `codex-<邮箱>.json`，不修改源文件。同一邮箱再次添加会更新已有文件，不会切换当前账号。
+- **切换凭证**：从已保存的邮箱列表中选择账号，将对应的已保存文件写入 `~/.codex/auth.json`。切换无需联网；没有已保存凭证时会提示先添加。
 
 一次运行完成一次添加或切换；完成后退出。失败时以非零状态退出，Ctrl+C 取消时正常退出。
 
@@ -43,7 +43,7 @@ codexplus
 }
 ```
 
-目前仅支持 `codex` 类型和通过 ChatGPT 登录生成、包含 `tokens.access_token` 的 `auth.json`，不支持只有 API key 的文件。凭证内容不做重新序列化，保留 refresh token、ID token 以及其他原始字段。
+目前仅支持 `codex` 类型和通过 ChatGPT 登录生成、包含 `tokens.access_token` 的 `auth.json`，不支持只有 API key 的文件。添加时只保留顶层的 `auth_mode`、`OPENAI_API_KEY`、`tokens`、`last_refresh`，以及 `tokens` 内的 `id_token`、`access_token`、`refresh_token`、`account_id`。其他字段全部丢弃；保留字段的原值不变，缺失字段不补齐，已有 `null` 原样保留。过滤后的凭证重新序列化为 JSON 保存。
 
 文件通过同目录临时文件和重命名写入。Unix 上新建的配置和凭证权限为 `0600`，新建目录为 `0700`。读取文件、校验或账号查询失败时不更新已有配置和凭证。配置提交失败时恢复本次替换的凭证。
 
@@ -71,4 +71,4 @@ npm pack --dry-run
 
 `check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 强制禁止 JavaScript / TypeScript 中的行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
 
-测试使用临时目录和模拟账号接口，覆盖原样保存、同邮箱更新、离线切换、失败时保护现有文件、配置写入回滚、文件权限和禁止注释规则，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行相同检查。实际账号接口仍需要用户自己的有效凭证进行联网验证。
+测试使用临时目录和模拟账号接口，覆盖字段过滤、缺失字段和 `null` 保留、同邮箱更新、离线切换、失败时保护现有文件、配置写入回滚、文件权限和禁止注释规则，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行相同检查。实际账号接口仍需要用户自己的有效凭证进行联网验证。

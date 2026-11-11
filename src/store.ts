@@ -86,14 +86,14 @@ export class CredentialStore {
     }
     const expanded = path === '~' ? this.home : path.startsWith('~/') ? join(this.home, path.slice(2)) : resolve(path);
     const content = await readFile(expanded, 'utf8');
-    const tokens = parseAuth(content);
+    const auth = parseAuth(content);
     const config = await this.readConfig();
-    const { email } = await lookupAccount(tokens, this.request);
+    const { email } = await lookupAccount(auth.tokens, this.request);
     const credential: Credential = { type: 'codex', email };
     const destination = join(this.credentialsPath, credentialFilename(email));
     const previous = await readOptional(destination);
 
-    await writeAtomic(destination, content);
+    await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
     try {
       const credentials = config.credentials.filter((entry) => entry.email !== email);
       credentials.push(credential);
