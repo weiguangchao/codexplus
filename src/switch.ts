@@ -1,6 +1,6 @@
 import { confirm } from '@inquirer/prompts';
 import { findCodexProcesses } from './processes.js';
-import type { Credential, CredentialStore } from './store.js';
+import type { Credential } from './protocol.js';
 
 interface SwitchOptions {
   findProcesses?: typeof findCodexProcesses;
@@ -29,7 +29,7 @@ export async function confirmRunningCodex({
 }
 
 export async function switchCredential(
-  store: Pick<CredentialStore, 'switch'>,
+  store: { switch(credential: Credential): Promise<void> },
   credential: Credential,
   options: SwitchOptions = {},
 ): Promise<void> {

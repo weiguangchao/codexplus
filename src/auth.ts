@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export interface AuthTokens {
   access_token: string;
   id_token?: unknown;
@@ -120,4 +122,8 @@ export function idTokenEmail(content: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function authDigest(content: string): string {
+  return createHash('sha256').update(JSON.stringify(parseAuth(content))).digest('hex');
 }

@@ -1,7 +1,7 @@
 {
   "name": "codexplus",
   "version": "0.1.0",
-  "description": "交互式管理和切换 Codex 的 ChatGPT 登录凭证",
+  "description": "通过 C/S 架构集中管理 Codex 凭证，在本机交互式切换账号",
   "type": "module",
   "bin": {
     "codexplus": "dist/cli.js"
@@ -15,6 +15,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.ts --home .codexplus",
+    "dev:server": "tsx src/cli.ts serve --home .codexplus",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",

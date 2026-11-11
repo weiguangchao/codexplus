@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-import { input, select } from '@inquirer/prompts';
+import { input, password, select } from '@inquirer/prompts';
 import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import { isAbsolute, relative, sep } from 'node:path';
 import { emitKeypressEvents } from 'node:readline';
 import { styleText } from 'node:util';
 import { isRecord, parseAuth } from './auth.js';
-import { parseHome } from './options.js';
-import { CredentialStore, expandPath } from './store.js';
-import type { Credential, CurrentLogin } from './store.js';
+import { CredentialClient } from './client.js';
+import type { Session } from './client.js';
+import { expandPath } from './files.js';
+import { parseCommand, usage } from './options.js';
+import type { Credential, CurrentLogin } from './protocol.js';
+import { runAdmin, runServe } from './serve.js';
 import { confirmRunningCodex } from './switch.js';
 import {
   addChoices,
@@ -61,7 +65,7 @@ function isCancel(error: unknown): boolean {
   return error instanceof Error && (error.name === 'ExitPromptError' || error.name === 'AbortPromptError');
 }
 
-function tildify(store: CredentialStore, path: string): string {
+function tildify(store: Session, path: string): string {
   const inside = relative(store.userHome, path);
   if (inside === '') {
     return '~';
@@ -69,7 +73,7 @@ function tildify(store: CredentialStore, path: string): string {
   return inside.startsWith('..') || isAbsolute(inside) ? path : `~${sep}${inside}`;
 }
 
-function describeError(store: CredentialStore, error: unknown): string {
+function describeError(store: Session, error: unknown): string {
   if (isRecord(error) && typeof error.code === 'string') {
     const path = typeof error.path === 'string' ? tildify(store, error.path) : '';
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
@@ -94,7 +98,7 @@ function readVersion(): string {
   }
 }
 
-async function validatePath(store: CredentialStore, value: string): Promise<string | true> {
+async function validatePath(store: Session, value: string): Promise<string | true> {
   if (!value.trim()) {
     return '请输入 auth.json 的路径。';
   }
@@ -110,14 +114,14 @@ async function validatePath(store: CredentialStore, value: string): Promise<stri
   }
 }
 
-async function saveFrom(store: CredentialStore, credentials: Credential[], path: string): Promise<Credential> {
+async function saveFrom(store: Session, credentials: Credential[], path: string): Promise<Credential> {
   const credential = await withSpinner('正在向 ChatGPT 查询账号邮箱…', () => store.add(path));
   const existed = credentials.some((entry) => entry.email === credential.email);
   report(symbols.success, `${existed ? '已更新' : '已保存'} ${styleText('bold', credential.email)}`, tildify(store, expandPath(store.userHome, path)));
   return credential;
 }
 
-async function trySave(store: CredentialStore, credentials: Credential[], path: string): Promise<Credential | null> {
+async function trySave(store: Session, credentials: Credential[], path: string): Promise<Credential | null> {
   try {
     return await saveFrom(store, credentials, path);
   } catch (error) {
@@ -131,7 +135,7 @@ async function trySave(store: CredentialStore, credentials: Credential[], path: 
   }
 }
 
-async function askPath(store: CredentialStore, previous: string) {
+async function askPath(store: Session, previous: string) {
   return escapable((context) =>
     input(
       {
@@ -145,7 +149,7 @@ async function askPath(store: CredentialStore, previous: string) {
   );
 }
 
-async function addFlow(store: CredentialStore, credentials: Credential[], current: CurrentLogin): Promise<void> {
+async function addFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<void> {
   let source: AddSource = current.status === 'none' || current.status === 'saved' ? 'file' : 'codex';
   let previous = '';
   for (;;) {
@@ -160,7 +164,7 @@ async function addFlow(store: CredentialStore, credentials: Credential[], curren
     }
     source = choice;
     if (choice === 'codex') {
-      const latest = await store.current(credentials);
+      const latest = await store.current();
       current = latest;
       if (latest.status === 'none') {
         report(symbols.failure, styleText('red', '未找到 ~/.codex/auth.json，请先在 Codex 中登录。'));
@@ -211,8 +215,8 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'stale'
   );
 }
 
-async function backupBeforeSwitch(store: CredentialStore, credentials: Credential[], target: Credential) {
-  const current = await store.current(credentials);
+async function backupBeforeSwitch(store: Session, credentials: Credential[], target: Credential) {
+  const current = await store.current();
   if (!needsBackup(current)) {
     return 'switch' as const;
   }
@@ -266,7 +270,7 @@ async function askRunningCodex({ message }: { message: string; default: boolean 
   return answer === true;
 }
 
-async function switchFlow(store: CredentialStore, credentials: Credential[], current: CurrentLogin): Promise<boolean> {
+async function switchFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<boolean> {
   const menu = switchChoices(credentials, current);
   if (menu.default === null) {
     report(symbols.info, '已保存的账号只有当前这一个，请先添加其他账号。');
@@ -302,18 +306,53 @@ async function switchFlow(store: CredentialStore, credentials: Credential[], cur
   }
 }
 
+async function askPairing(url: string) {
+  report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus serve pair 获取配对码');
+  const code = await password({ message: '服务端生成的配对码', mask: true, theme: inputTheme,
+    validate: (value) => Boolean(value.trim()) || '请输入配对码。' });
+  const name = await input({ message: '客户端名称', default: hostname(), theme: inputTheme,
+    validate: (value) => (Boolean(value.trim()) && value.length <= 100) || '请输入名称，最多 100 字符。' });
+  console.log('');
+  return { code, name };
+}
+
 async function main(): Promise<void> {
-  const home = parseHome(process.argv.slice(2));
+  const command = parseCommand(process.argv.slice(2));
+  if (command.kind === 'help') {
+    console.log(usage);
+    return;
+  }
+  if (command.kind === 'serve') {
+    await runServe(command);
+    return;
+  }
+  if (command.kind === 'admin') {
+    await runAdmin(command);
+    return;
+  }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('请在交互式终端中运行 codexplus。');
   }
 
-  const store = new CredentialStore({ home });
   console.log(renderTitle(readVersion()));
+  const client = new CredentialClient({ home: command.home });
+  const store = await client.connect({
+    ...(command.target === undefined ? {} : { target: command.target }),
+    askPairing,
+    log: (message) => report(symbols.info, message),
+  });
+  try {
+    await menu(store);
+  } finally {
+    await store.close();
+  }
+}
 
+async function menu(store: Session): Promise<void> {
+  console.log(`${styleText('dim', '服务端  ')}  ${store.url}`);
   for (;;) {
     const credentials = await store.list();
-    const current = await store.current(credentials);
+    const current = await store.current();
     const menu = mainChoices(credentials, current);
     const action = await escapable((context) =>
       select(
