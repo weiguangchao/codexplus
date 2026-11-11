@@ -1,4 +1,4 @@
-import { credentialFilename, isRecord } from './auth.js';
+import { authDigest, parseAuth, credentialFilename, isRecord } from './auth.js';
 
 export const defaultPort = 47831;
 export const defaultServerUrl = localUrl(defaultPort);
@@ -11,11 +11,13 @@ export interface Credential {
 export type CurrentLogin =
   | { status: 'none' }
   | { status: 'saved'; email: string }
-  | { status: 'stale'; email: string }
+  | { status: 'ahead'; email: string }
+  | { status: 'behind'; email: string }
+  | { status: 'diverged'; email: string }
   | { status: 'unsaved'; email: string | null };
 
 export class ServiceError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -84,7 +86,12 @@ export async function requestService(url: string, path: string, token?: string, 
   }
   if (!response.ok) {
     throw new ServiceError(response.status,
-      isRecord(result) && typeof result.error === 'string' ? result.error : `服务端请求失败（HTTP ${response.status}）。`);
+      isRecord(result) && typeof result.error === 'string' ? result.error : `服务端请求失败（HTTP ${response.status}）。`, isRecord(result) ? result : {});
   }
   return result;
+}
+
+export function conflict(email: string, content: string): ServiceError {
+  const auth = parseAuth(content);
+  return new ServiceError(409, '服务端版本已更新，请确认是否覆盖。', { code: 'conflict', email, digest: authDigest(content), lastRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null });
 }

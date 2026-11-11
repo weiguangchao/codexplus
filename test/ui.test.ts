@@ -13,7 +13,7 @@ test('状态栏区分已保存、未保存和未登录', () => {
   assert.match(plain(renderStatus({ status: 'unsaved', email: 'carol@example.com' }, 0)), /carol@example\.com 未保存[\s\S]*暂无/u);
   assert.match(plain(renderStatus({ status: 'unsaved', email: null }, 1)), /无法识别/u);
   assert.match(plain(renderStatus({ status: 'none' }, 1)), /未登录/u);
-  assert.match(plain(renderStatus({ status: 'stale', email: 'alice@example.com' }, 1)), /alice@example\.com 有更新未保存/u);
+  assert.match(plain(renderStatus({ status: 'ahead', email: 'alice@example.com' }, 1)), /alice@example\.com 有更新未保存/u);
 });
 
 test('主菜单在没有可切换账号或当前登录需要保存时默认添加', () => {
@@ -26,7 +26,7 @@ test('主菜单在没有可切换账号或当前登录需要保存时默认添�
   const onlyChoice = onlyCurrent.choices[0];
   assert.ok(onlyChoice && !(onlyChoice instanceof Separator) && onlyChoice.disabled);
   assert.equal(mainChoices([alice, bob], { status: 'unsaved', email: null }).default, 'add');
-  assert.equal(mainChoices([alice, bob], { status: 'stale', email: 'alice@example.com' }).default, 'add');
+  assert.equal(mainChoices([alice, bob], { status: 'ahead', email: 'alice@example.com' }).default, 'add');
   assert.equal(mainChoices([alice, bob], { status: 'saved', email: 'alice@example.com' }).default, 'switch');
   const describe = (menu: ReturnType<typeof mainChoices>) => {
     const choice = menu.choices[0];

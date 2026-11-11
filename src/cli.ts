@@ -171,6 +171,7 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
         source = 'file';
         continue;
       }
+      if (latest.status === 'behind') { report(symbols.info, '服务端版本更新，无需保存。'); return; }
       if (latest.status === 'saved') {
         report(symbols.info, `${styleText('bold', latest.email)} 已是最新，无需更新`, '~/.codex/auth.json 与已保存的凭证一致');
         return;
@@ -193,12 +194,12 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
   }
 }
 
-async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'stale' | 'unsaved' }>, target: Credential) {
+async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' }>, target: Credential) {
   const warning =
-    current.status === 'stale'
+    current.status === 'ahead'
       ? `当前登录 ${current.email} 有更新尚未保存，切换后会被覆盖。`
       : `${current.email === null ? '当前 Codex 登录' : `当前登录 ${current.email} `}尚未保存，切换后会被覆盖。`;
-  const save = current.status === 'stale' ? '先更新保存，再切换' : '先保存当前登录，再切换';
+  const save = current.status === 'ahead' ? '先更新保存，再切换' : '先保存当前登录，再切换';
   return escapable((context) =>
     select(
       {
@@ -341,6 +342,10 @@ async function main(): Promise<void> {
     askPairing,
     log: (message) => report(symbols.info, message),
   });
+  store.confirmUpload = async (details) => {
+    console.log(`账号：${String(details.email)}，本机刷新时间：${String(details.localRefresh ?? '未知')}，服务端刷新时间：${String(details.lastRefresh ?? '未知')}`);
+    return await select({ message: '是否用本机登录覆盖服务端？', choices: [{ value: false, name: '返回' }, { value: true, name: '用本机登录覆盖服务端' }], default: false });
+  };
   try {
     await menu(store);
   } finally {
@@ -371,7 +376,9 @@ async function menu(store: Session): Promise<void> {
     }
 
     try {
-      if (action === 'switch') {
+      if (action === 'update' && current.status !== 'none' && current.email) {
+        if (await confirmRunningCodex({ ask: askRunningCodex, log: logRunningCodex })) await store.switch({ type: 'codex', email: current.email });
+      } else if (action === 'switch') {
         if (await switchFlow(store, credentials, current)) {
           return;
         }

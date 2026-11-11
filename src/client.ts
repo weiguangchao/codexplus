@@ -18,6 +18,7 @@ export interface ClientConfig {
   version: 1;
   current: string;
   servers: Record<string, ServerEntry>;
+  baseline: { server: string; email: string; digest: string } | null;
 }
 
 export interface Pairing {
@@ -53,6 +54,8 @@ function parsePairResult(result: unknown, pairing: ServerEntry['pairing']): Serv
 }
 
 export class Session {
+  private refreshes = new Map<string, unknown>();
+  confirmUpload?: (details: Record<string, unknown>) => Promise<boolean>;
   private digests = new Map<string, string>();
 
   constructor(
@@ -62,6 +65,8 @@ export class Session {
     readonly codexAuthPath: string,
     private readonly stop: () => Promise<void>,
     private readonly verify: () => Promise<void> = async () => {},
+    private readonly owner?: CredentialClient,
+    readonly server = url,
   ) {}
 
   private async request(path: string, body?: unknown): Promise<unknown> {
@@ -78,6 +83,7 @@ export class Session {
     const credentials = result.credentials.map((entry: unknown) => {
       const credential = parseCredential(entry);
       if (isRecord(entry) && typeof entry.digest === 'string') {
+        this.refreshes.set(credential.email, entry.lastRefresh);
         digests.set(credential.email, entry.digest);
       }
       return credential;
@@ -103,8 +109,10 @@ export class Session {
       return { status: 'saved', email: match.email };
     }
     const email = idTokenEmail(content);
+    const baseline = (await this.owner?.config())?.baseline;
+    const base = baseline?.server === this.server && baseline.email === email ? baseline.digest : null;
     return email !== null && saved.some((credential) => credential.email === email && this.digests.has(email))
-      ? { status: 'stale', email } : { status: 'unsaved', email };
+      ? { status: this.digests.get(email) === base ? 'ahead' : login === base ? 'behind' : 'diverged', email } : { status: 'unsaved', email };
   }
 
   async add(sourcePath: string): Promise<Credential> {
@@ -113,11 +121,27 @@ export class Session {
     }
     const content = await readFile(expandPath(this.userHome, sourcePath), 'utf8');
     const auth = parseAuth(content);
-    const result = await this.request('/v1/credentials', { auth });
+    const currentFile = expandPath(this.userHome, sourcePath) === this.codexAuthPath;
+    const baseline = (await this.owner?.config())?.baseline;
+    let base = currentFile && baseline?.server === this.server ? baseline.digest : null;
+    let result: unknown;
+    for (;;) {
+      try { result = await this.request('/v1/credentials', { auth, base }); break; } catch (error) {
+        if (!(error instanceof ServiceError) || error.status !== 409 || error.details.code !== 'conflict' ||
+          !await this.confirmUpload?.({ ...error.details, localRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null })) throw error;
+        base = String(error.details.digest);
+      }
+    }
     if (!isRecord(result)) {
       throw new Error('服务端凭证响应格式无效。');
     }
-    return parseCredential(result.credential);
+    const credential = parseCredential(result.credential);
+    if (currentFile) await this.baseline(credential.email, content);
+    return credential;
+  }
+
+  private async baseline(email: string, content: string): Promise<void> {
+    if (this.owner) await this.owner.setBaseline({ server: this.server, email, digest: authDigest(content) });
   }
 
   async switch(credential: Credential): Promise<void> {
@@ -128,6 +152,7 @@ export class Session {
     }
     const auth = parseAuth(JSON.stringify(result.auth));
     await writeAtomic(this.codexAuthPath, `${JSON.stringify(auth, null, 2)}\n`);
+    await this.baseline(selected.email, JSON.stringify(auth));
   }
 
   async close(): Promise<void> {
@@ -154,7 +179,7 @@ export class CredentialClient {
   async config(): Promise<ClientConfig> {
     const content = await readOptional(this.configPath);
     if (content === null) {
-      return { version: 1, current: defaultServerUrl, servers: {} };
+      return { version: 1, current: defaultServerUrl, servers: {}, baseline: null };
     }
     try {
       const value: unknown = JSON.parse(content);
@@ -165,10 +190,15 @@ export class CredentialClient {
       for (const [url, entry] of Object.entries(value.servers)) {
         servers[serverUrl(url)] = parseEntry(entry);
       }
-      return { version: 1, current: serverUrl(value.current), servers };
+      return { version: 1, current: serverUrl(value.current), servers, baseline: isRecord(value.baseline) && typeof value.baseline.server === 'string' && typeof value.baseline.email === 'string' && typeof value.baseline.digest === 'string' ? value.baseline as unknown as ClientConfig['baseline'] : null };
     } catch {
       throw new Error(`${this.configPath} 格式无效，请修复或删除该文件后重新配对；已有文件未被覆盖。`);
     }
+  }
+
+  async setBaseline(baseline: ClientConfig['baseline']): Promise<void> {
+    const config = await this.config();
+    await writeAtomic(this.configPath, `${JSON.stringify({ ...config, baseline }, null, 2)}\n`);
   }
 
   private async startEmbedded(url: string): Promise<{ close(): Promise<void> } | null> {
@@ -191,19 +221,9 @@ export class CredentialClient {
   }
 
   private async checkService(url: string): Promise<void> {
-    let result: unknown;
-    try {
-      result = await requestService(url, '/v1/health');
-    } catch (error) {
-      if (new URL(url).protocol === 'http:') {
-        result = null;
-      } else {
-        throw error;
-      }
-    }
-    if (!isRecord(result) || result.service !== 'codexplus') {
-      throw new Error(`${url} 的端口已被其他程序占用，请用 --port 指定其他端口。`);
-    }
+    const result = await requestService(url, '/v1/health');
+    if (!isRecord(result) || result.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
+    if (result.version !== 2) throw new Error('版本不兼容，请把两端升级到同一版本。');
   }
 
   private async valid(url: string, token: string): Promise<boolean> {
@@ -245,7 +265,7 @@ export class CredentialClient {
     const local = isLoopbackUrl(url);
     const embedded = local ? await this.startEmbedded(url) : null;
     try {
-      if (local && !embedded) {
+      if (!embedded) {
         await this.checkService(url);
       }
       let entry = config.servers[url];
@@ -265,11 +285,11 @@ export class CredentialClient {
         await this.manualPair(url, askPairing);
       if (config.current !== url || config.servers[url] !== entry) {
         const latest = await this.config();
-        const next: ClientConfig = { version: 1, current: url, servers: { ...latest.servers, [url]: entry } };
+        const next: ClientConfig = { version: 1, current: url, servers: { ...latest.servers, [url]: entry }, baseline: latest.baseline };
         await writeAtomic(this.configPath, `${JSON.stringify(next, null, 2)}\n`);
       }
       return new Session(url, entry.token, this.userHome, this.codexAuthPath, async () => { await embedded?.close(); },
-        entry.pairing === 'local' && !embedded ? verify : undefined);
+        entry.pairing === 'local' && !embedded ? verify : undefined, this);
     } catch (error) {
       await embedded?.close();
       throw error;

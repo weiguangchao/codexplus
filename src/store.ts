@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { authDigest, credentialFilename, isRecord, lookupAccount, parseAuth } from './auth.js';
 import { readOptional, writeAtomic } from './files.js';
-import { parseCredential } from './protocol.js';
+import { conflict, parseCredential } from './protocol.js';
 import type { Credential } from './protocol.js';
 
 interface Config {
@@ -47,7 +47,7 @@ export class CredentialStore {
     return config.credentials.toSorted((left, right) => left.email.localeCompare(right.email));
   }
 
-  async add(content: string): Promise<Credential> {
+  async add(content: string, base: string | null = null): Promise<Credential> {
     const auth = parseAuth(content);
     const config = await this.readConfig();
     const { email } = await lookupAccount(auth.tokens, this.request);
@@ -55,6 +55,11 @@ export class CredentialStore {
     const destination = join(this.credentialsPath, credentialFilename(email));
     const previous = await readOptional(destination);
 
+    if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
+      const digest = authDigest(previous);
+      if (digest === authDigest(content)) return credential;
+      if (digest !== base) throw conflict(email, previous);
+    }
     await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
     try {
       const credentials = config.credentials.filter((entry) => entry.email !== email);

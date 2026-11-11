@@ -81,7 +81,7 @@ test('重复添加同一邮箱时更新文件，配置中不重复注册', async
   await store.add(await readFile(source, 'utf8'));
   const replacement = '{"tokens":{"access_token":"fake-new-access","custom":"discarded"},"custom":"discarded"}\n';
   await writeFile(source, replacement);
-  await store.add(await readFile(source, 'utf8'));
+  await store.add(await readFile(source, 'utf8'), await store.digest({ type: 'codex', email: 'person@example.com' }));
 
   assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8')), {
     tokens: { access_token: 'fake-new-access' },
@@ -223,4 +223,20 @@ test('Unix 上的服务端凭证和配置权限为 0600，新增目录为 0700',
   for (const path of [join(home, '.codexplus'), store.credentialsPath]) {
     assert.equal((await stat(path)).mode & 0o777, 0o700);
   }
+});
+
+test('上传前置条件允许相同快照和匹配基线，拒绝旧快照覆盖', async (context) => {
+  const home = await temporaryHome(context);
+  const store = new CredentialStore({ userHome: home, request: account });
+  const credential = await store.add(original, null);
+  const base = await store.digest(credential);
+  await store.add(original, null);
+  const next = JSON.stringify({ tokens: { access_token: 'new' }, last_refresh: '2026-11-12' });
+  await store.add(next, base);
+  await assert.rejects(store.add(original, base), (error: unknown) => {
+    assert.ok(error instanceof Error && 'details' in error);
+    assert.equal((error.details as { code: string }).code, 'conflict');
+    return true;
+  });
+  assert.equal(JSON.parse(await store.get(credential)).tokens.access_token, 'new');
 });

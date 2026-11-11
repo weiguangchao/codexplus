@@ -3,7 +3,7 @@ import { Separator } from '@inquirer/prompts';
 import { stripVTControlCharacters, styleText } from 'node:util';
 import type { Credential, CurrentLogin } from './protocol.js';
 
-export type MainAction = 'switch' | 'add' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'exit';
 export type AddSource = 'codex' | 'file' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
@@ -45,11 +45,11 @@ export function menuTheme() {
 }
 
 function activeEmail(current: CurrentLogin): string | null {
-  return current.status === 'saved' || current.status === 'stale' ? current.email : null;
+  return current.status === 'saved' || current.status === 'ahead' ? current.email : null;
 }
 
-export function needsBackup(current: CurrentLogin): current is Extract<CurrentLogin, { status: 'stale' | 'unsaved' }> {
-  return current.status === 'stale' || current.status === 'unsaved';
+export function needsBackup(current: CurrentLogin): current is Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' }> {
+  return current.status === 'ahead' || current.status === 'diverged' || current.status === 'unsaved';
 }
 
 export function describeCurrent(current: CurrentLogin): string {
@@ -57,7 +57,8 @@ export function describeCurrent(current: CurrentLogin): string {
   if (current.status === 'saved') {
     return `${dot('green')} ${styleText('bold', current.email)}`;
   }
-  if (current.status === 'stale') {
+  if (current.status === 'behind' || current.status === 'diverged') return `${dot('yellow')} ${current.email} ${current.status === 'behind' ? '服务端有更新版本' : '与服务端版本不一致'}`;
+  if (current.status === 'ahead') {
     return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '有更新未保存')}`;
   }
   if (current.status === 'unsaved') {
@@ -93,7 +94,7 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
   const addDescription =
     current.status === 'unsaved'
       ? '当前 Codex 登录尚未保存，建议先保存。'
-      : current.status === 'stale'
+      : current.status === 'ahead'
         ? '当前登录有更新，可以重新保存以更新凭证。'
         : '保存一个 auth.json，同一邮箱会覆盖之前保存的凭证';
   const choices = [
@@ -104,11 +105,12 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
       disabled: others === 0 ? styleText('dim', credentials.length === 0 ? '(暂无账号)' : '(没有其他账号)') : false,
     },
     { value: 'add' as const, name: '添加账号', description: addDescription },
+    ...(current.status === 'behind' || current.status === 'diverged' ? [{ value: 'update' as const, name: '更新本机登录' }] : []),
     divider(),
     { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
   ];
   const fallback: MainAction = others === 0 || needsBackup(current) ? 'add' : 'switch';
-  return { choices, default: fallback };
+  return { choices, default: current.status === 'behind' ? 'update' as const : fallback };
 }
 
 export function switchChoices(credentials: Credential[], current: CurrentLogin) {
@@ -137,7 +139,7 @@ export function addChoices(current: CurrentLogin) {
       ? '未找到 ~/.codex/auth.json，请先在 Codex 中登录'
       : current.status === 'saved'
         ? `${current.email} 已保存，与当前登录一致，无需更新`
-        : current.status === 'stale'
+        : current.status === 'ahead'
           ? `${current.email} 有更新，将用当前登录更新已保存的凭证`
           : `~/.codex/auth.json${current.email === null ? '' : ` · ${current.email}`}`;
   return [

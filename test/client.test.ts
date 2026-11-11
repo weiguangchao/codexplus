@@ -27,7 +27,7 @@ async function fakeServer(context: TestContext, port = 0, id: () => string = ran
     request.resume();
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/v1/health') {
-      response.end(JSON.stringify({ service: 'codexplus', version: 1 }));
+      response.end(JSON.stringify({ service: 'codexplus', version: 2 }));
     } else if (request.url === '/v1/local/challenge') {
       response.end(JSON.stringify({ id: id() }));
     } else {
@@ -103,7 +103,7 @@ test('端口被同目录的 codexplus 服务端占用时直接连接，通过本
   assert.deepEqual(started, []);
   assert.match(logs.join('\n'), new RegExp(`检测到本机已运行的 codexplus 服务端（${server.url}，目录 .+）`, 'u'));
   await session.close();
-  assert.deepEqual(await (await fetch(`${server.url}/v1/health`)).json(), { service: 'codexplus', version: 1 });
+  assert.deepEqual(await (await fetch(`${server.url}/v1/health`)).json(), { service: 'codexplus', version: 2 });
   const again = await client.connect({ log: (message) => logs.push(message), askPairing: never });
   await again.close();
   assert.equal(logs.length, 1);
@@ -179,7 +179,7 @@ test('端口被其他程序占用时报错，不发送令牌', async (context) =
   const address = other.address();
   assert.ok(address !== null && typeof address !== 'string');
   const { client } = makeClient(context, userHome);
-  await assert.rejects(client.connect({ target: localUrl(address.port), askPairing: never, log: () => {} }), /被其他程序占用.*--port/u);
+  await assert.rejects(client.connect({ target: localUrl(address.port), askPairing: never, log: () => {} }), /不是 codexplus|JSON/u);
   await assert.rejects(stat(client.configPath), { code: 'ENOENT' });
 });
 
@@ -335,7 +335,7 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致（有更�
   await writeFile(session.codexAuthPath, await readFile(source, 'utf8'));
   assert.deepEqual(await session.current(), { status: 'saved', email: 'person@example.com' });
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'refreshed', id_token: idToken('person@example.com') } }));
-  assert.deepEqual(await session.current(), { status: 'stale', email: 'person@example.com' });
+  assert.deepEqual(await session.current(), { status: 'diverged', email: 'person@example.com' });
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'other', id_token: idToken('other@example.com') } }));
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'other@example.com' });
   await writeFile(session.codexAuthPath, '{"tokens":{"access_token":"x","id_token":"not-a-jwt"}}');
@@ -363,6 +363,8 @@ test('其他客户端更新同一账号后，当前登录状态立即变为有�
   await first.list();
   assert.deepEqual(await first.current(), { status: 'saved', email: 'person@example.com' });
   await writeFile(join(userHome, 'v2.json'), JSON.stringify({ tokens: { access_token: 'v2', id_token: idToken('person@example.com') } }));
+  await first.switch({ type: 'codex', email: 'person@example.com' });
+  second.confirmUpload = async () => true;
   await second.add(join(userHome, 'v2.json'));
-  assert.deepEqual(await first.current(), { status: 'stale', email: 'person@example.com' });
+  assert.deepEqual(await first.current(), { status: 'behind', email: 'person@example.com' });
 });

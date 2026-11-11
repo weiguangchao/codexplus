@@ -164,7 +164,7 @@ test('并发上传不同账户不会丢失服务端索引', async (context) => {
   });
   const { token } = await new AccessStore(home).addClient('客户端');
   await Promise.all(['one', 'two', 'three'].map((value) => requestService(server.url, '/v1/credentials', token,
-    { auth: { tokens: { access_token: value } } })));
+    { base: null, auth: { tokens: { access_token: value } } })));
   const result = await requestService(server.url, '/v1/credentials', token) as { credentials: unknown[] };
   assert.equal(result.credentials.length, 3);
 });

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { AccessStore } from './access.js';
 import { isRecord, parseAuth } from './auth.js';
 import { consumeLocalCode, createLocalCode, isLocalPurpose, isNonce, localEndpoint } from './local-codes.js';
-import { parseCredential } from './protocol.js';
+import { ServiceError, parseCredential } from './protocol.js';
 import { CredentialStore } from './store.js';
 
 class HttpError extends Error {
@@ -106,7 +106,7 @@ export async function startServer({
     }
     const path = request.url ?? '';
     if (request.method === 'GET' && path === '/v1/health') {
-      return { service: 'codexplus', version: 1 };
+      return { service: 'codexplus', version: 2 };
     }
     if (request.method === 'POST' && path === '/v1/pair') {
       if (typeof body.code !== 'string' || body.code.length > 128) {
@@ -136,15 +136,17 @@ export async function startServer({
     }
     if (request.method === 'GET' && path === '/v1/credentials') {
       const credentials = await store.list();
-      return { credentials: await Promise.all(credentials.map(async (credential) => ({ ...credential, digest: await store.digest(credential) }))) };
+      return { credentials: await Promise.all(credentials.map(async (credential) => ({ ...credential, digest: await store.digest(credential), lastRefresh: await store.get(credential).then((content) => { const value = parseAuth(content).last_refresh; return typeof value === 'string' ? value : null; }).catch(() => null) }))) };
     }
     if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download')) {
       try {
         if (path === '/v1/credentials') {
-          return { credential: await store.add(JSON.stringify(body.auth)) };
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
+          return { credential: await store.add(JSON.stringify(body.auth), body.base) };
         }
         return { auth: parseAuth(await store.get(parseCredential(body))) };
       } catch (error) {
+        if (error instanceof ServiceError) throw error;
         if (error instanceof Error && !('code' in error)) {
           throw new HttpError(400, error.message);
         }
@@ -169,8 +171,8 @@ export async function startServer({
     };
     void handle().catch((error: unknown) => {
       request.resume();
-      response.statusCode = error instanceof HttpError ? error.status : 500;
-      response.end(JSON.stringify({ error: error instanceof HttpError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。' }));
+      response.statusCode = error instanceof HttpError || error instanceof ServiceError ? error.status : 500;
+      response.end(JSON.stringify({ error: error instanceof HttpError || error instanceof ServiceError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。', ...(error instanceof ServiceError ? error.details : {}) }));
     });
   };
   const server = tls ? createSecureServer(tls, handler) : createServer(handler);
