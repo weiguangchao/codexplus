@@ -1,6 +1,7 @@
 import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import { stripVTControlCharacters, styleText } from 'node:util';
+import { newerRefresh } from './auth.js';
 import type { Credential, CurrentLogin } from './protocol.js';
 
 export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
@@ -48,8 +49,8 @@ function activeEmail(current: CurrentLogin): string | null {
   return current.status === 'saved' || current.status === 'ahead' ? current.email : null;
 }
 
-export function needsBackup(current: CurrentLogin): current is Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' }> {
-  return current.status === 'ahead' || current.status === 'diverged' || current.status === 'unsaved';
+export function needsBackup(current: CurrentLogin): current is Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' | 'deleted' }> {
+  return current.status === 'ahead' || current.status === 'diverged' || current.status === 'unsaved' || current.status === 'deleted';
 }
 
 export function describeCurrent(current: CurrentLogin): string {
@@ -63,6 +64,9 @@ export function describeCurrent(current: CurrentLogin): string {
   }
   if (current.status === 'ahead') {
     return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '有更新未保存')}`;
+  }
+  if (current.status === 'deleted') {
+    return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('dim', '已从凭证库删除，本机登录保留')}`;
   }
   if (current.status === 'unsaved') {
     return current.email === null
@@ -95,13 +99,15 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
         ? '已保存的账号只有当前这一个，请先添加其他账号。'
         : active === null ? `从 ${others} 个已保存的账号中选择一个` : `从 ${others} 个其他账号中选择一个`;
   const addDescription =
-    current.status === 'unsaved'
-      ? '当前 Codex 登录尚未保存，建议先保存。'
-      : current.status === 'ahead'
-        ? '当前登录有更新，可以重新保存以更新凭证。'
-        : current.status === 'diverged'
-          ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
-          : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
+    current.status === 'deleted'
+      ? '将重新保存刚删除的账号，需要再次确认。'
+      : current.status === 'unsaved'
+        ? '当前 Codex 登录尚未保存，建议先保存。'
+        : current.status === 'ahead'
+          ? '当前登录有更新，可以重新保存以更新凭证。'
+          : current.status === 'diverged'
+            ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
+            : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
     ...(current.status === 'behind'
       ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ~/.codex/auth.json` }]
@@ -123,7 +129,16 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
     { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
   ];
   const fallback: MainAction = others === 0 || needsBackup(current) ? 'add' : 'switch';
-  return { choices, default: current.status === 'behind' ? 'update' as const : fallback };
+  return { choices, default: current.status === 'deleted' ? 'exit' as const : current.status === 'behind' ? 'update' as const : fallback };
+}
+
+export function refreshDetails(local: unknown, server: unknown, localLabel = '本机'): string {
+  const time = (value: unknown) => typeof value === 'string' && value.trim() ? value : '未知';
+  const newer = newerRefresh(local, server);
+  const advice = newer === null
+    ? '无法比较哪份更新，覆盖可能替换仍可用的凭证。建议先在 Codex 中重新登录获取凭证。'
+    : newer === 'local' ? `${localLabel}刷新时间较晚，覆盖本机可能回退凭证。` : '服务端刷新时间较晚，覆盖服务端可能回退凭证。';
+  return `${localLabel}刷新时间：${time(local)}\n  服务端刷新时间：${time(server)}\n  ${advice}`;
 }
 
 export function switchChoices(credentials: Credential[], current: CurrentLogin) {

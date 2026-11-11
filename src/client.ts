@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { authDigest, idTokenEmail, isRecord, parseAuth } from './auth.js';
+import { authDigest, idTokenEmail, isRecord, newerRefresh, parseAuth } from './auth.js';
 import { expandPath, readOptional, writeAtomic } from './files.js';
 import { isLoopbackUrl, parseCredential, requestService, serverUrl, ServiceError } from './protocol.js';
 import type { Credential, CurrentLogin, UploadResult } from './protocol.js';
@@ -55,15 +55,17 @@ function parsePairResult(result: unknown): ServerEntry {
 }
 
 export class UploadCancelled extends Error {
-  constructor() {
-    super('已取消，服务端保存的版本未更改。');
+  constructor(message = '已取消，服务端保存的版本未更改。') {
+    super(message);
   }
 }
 
 export class Session {
   private refreshes = new Map<string, unknown>();
   confirmUpload?: (details: Record<string, unknown>) => Promise<boolean>;
+  confirmRestore?: (email: string | null) => Promise<boolean>;
   private digests = new Map<string, string | null>();
+  private deleted = new Map<string, string | null>();
 
   constructor(
     readonly url: string,
@@ -116,6 +118,8 @@ export class Session {
       return { status: 'saved', email: match.email };
     }
     const email = idTokenEmail(content);
+    const deleted = this.deletedEmail(content);
+    if (deleted !== null) return { status: 'deleted', email: deleted };
     const baseline = (await this.owner?.config())?.baseline;
     const base = baseline?.server === this.server && baseline.email === email ? baseline.digest : null;
     if (email === null || !saved.some((credential) => credential.email === email && this.digests.get(email) != null)) {
@@ -124,14 +128,24 @@ export class Session {
     if (base === null) {
       return { status: 'diverged', email };
     }
-    return { status: this.digests.get(email) === base ? 'ahead' : login === base ? 'behind' : 'diverged', email };
+    let localRefresh: unknown;
+    try { localRefresh = parseAuth(content).last_refresh; } catch { localRefresh = null; }
+    const newer = newerRefresh(localRefresh, this.refreshes.get(email));
+    return { status: this.digests.get(email) === base && newer === 'local' ? 'ahead' : login === base && newer === 'server' ? 'behind' : 'diverged', email };
   }
 
   snapshotDigest(email: string): string | null { return this.digests.get(email) ?? null; }
 
-  async refreshTimes(email: string): Promise<string> {
-    const auth = parseAuth(await readFile(this.codexAuthPath, 'utf8'));
-    return `本机刷新时间：${typeof auth.last_refresh === 'string' ? auth.last_refresh : '未知'}，服务端刷新时间：${String(this.refreshes.get(email) ?? '未知')}`;
+  async refreshTimes(email: string): Promise<{ local: unknown; server: unknown }> {
+    let local: unknown;
+    try { local = parseAuth(await readFile(this.codexAuthPath, 'utf8')).last_refresh; } catch { local = null; }
+    return { local, server: this.refreshes.get(email) };
+  }
+
+  private deletedEmail(content: string): string | null {
+    const email = idTokenEmail(content);
+    if (email !== null && this.deleted.has(email)) return email;
+    try { return [...this.deleted].find(([, digest]) => digest === authDigest(content))?.[0] ?? null; } catch { return null; }
   }
 
   async add(sourcePath: string, confirmedBase?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
@@ -140,9 +154,19 @@ export class Session {
     }
     const content = await readFile(expandPath(this.userHome, sourcePath), 'utf8');
     const auth = parseAuth(content);
+    const restoring = this.deletedEmail(content);
+    const unknownRestoration = this.deleted.size > 0 && idTokenEmail(content) === null;
+    if ((restoring !== null || unknownRestoration) && !await this.confirmRestore?.(restoring)) {
+      throw new UploadCancelled('已取消，账号未重新保存。');
+    }
     const currentFile = expandPath(this.userHome, sourcePath) === this.codexAuthPath;
     const baseline = (await this.owner?.config())?.baseline;
-    let base = confirmedBase === undefined ? currentFile && baseline?.server === this.server && baseline.email === idTokenEmail(content) ? baseline.digest : null : confirmedBase;
+    const email = idTokenEmail(content);
+    let base = confirmedBase === undefined ? currentFile && baseline?.server === this.server && baseline.email === email ? baseline.digest : null : confirmedBase;
+    if (confirmedBase === undefined && base !== null && email !== null) {
+      await this.list();
+      if (this.digests.get(email) === base && authDigest(content) !== base && newerRefresh(auth.last_refresh, this.refreshes.get(email)) !== 'local') base = null;
+    }
     let result: unknown;
     for (;;) {
       try { result = await upload(() => this.request('/v1/credentials', { auth, base })); break; } catch (error) {
@@ -157,6 +181,7 @@ export class Session {
       throw new Error('服务端凭证响应格式无效。');
     }
     const credential = parseCredential(result.credential);
+    this.deleted.delete(credential.email);
     if (currentFile) await this.baseline(credential.email, content);
     return { credential, changed: result.changed };
   }
@@ -169,6 +194,7 @@ export class Session {
     const base = this.digests.get(credential.email);
     if (base === undefined) throw new Error('账号列表已变化，请刷新后重新选择。');
     await this.request('/v1/credentials/delete', { ...credential, base });
+    this.deleted.set(credential.email, base);
   }
 
   async switch(credential: Credential): Promise<void> {

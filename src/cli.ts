@@ -6,7 +6,7 @@ import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { runAdmin, runServe } from './serve.js';
 import { menu } from './flows.js';
-import { askPairing, askRepair, confirmUpload, isCancel } from './prompts.js';
+import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel } from './prompts.js';
 import { cancelled, line, renderTitle, report, symbols } from './ui.js';
 
 function readVersion(): string {
@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     log: (message) => report(symbols.info, message),
   });
   store.confirmUpload = confirmUpload;
+  store.confirmRestore = confirmRestore;
   try {
     await menu(store);
   } finally {

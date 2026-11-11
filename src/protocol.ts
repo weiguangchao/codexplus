@@ -18,6 +18,7 @@ export type CurrentLogin =
   | { status: 'ahead'; email: string }
   | { status: 'behind'; email: string }
   | { status: 'diverged'; email: string }
+  | { status: 'deleted'; email: string }
   | { status: 'unsaved'; email: string | null };
 
 export class ServiceError extends Error {
@@ -90,5 +91,5 @@ export async function requestService(url: string, path: string, token?: string, 
 
 export function conflict(email: string, content: string | null): ServiceError {
   const auth = content === null ? null : parseAuth(content);
-  return new ServiceError(409, '服务端版本已更新，请确认是否覆盖。', { code: 'conflict', email, digest: content === null ? null : authDigest(content), lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null });
+  return new ServiceError(409, '服务端凭证与本次上传不同，请确认是否覆盖。', { code: 'conflict', email, digest: content === null ? null : authDigest(content), lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null });
 }

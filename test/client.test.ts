@@ -173,14 +173,14 @@ test('其他客户端更新同一账号后，当前登录状态立即变为服�
   const first = await client.connect({ target: server.url, askPairing: async () => ({ code: await pairCode(server.url, join(userHome, '.codexplus')), name: '测试' }), log: () => {} });
   const second = await client.connect({ askPairing: never, log: () => {} });
   context.after(async () => { await first.close(); await second.close(); });
-  const login = JSON.stringify({ tokens: { access_token: 'v1', id_token: idToken('person@example.com') } });
+  const login = JSON.stringify({ tokens: { access_token: 'v1', id_token: idToken('person@example.com') }, last_refresh: '2026-11-01T00:00:00Z' });
   await writeFile(join(userHome, 'v1.json'), login);
   await first.add(join(userHome, 'v1.json'));
   await mkdir(join(userHome, '.codex'), { recursive: true });
   await writeFile(first.codexAuthPath, login);
   await first.list();
   assert.deepEqual(await first.current(), { status: 'saved', email: 'person@example.com' });
-  await writeFile(join(userHome, 'v2.json'), JSON.stringify({ tokens: { access_token: 'v2', id_token: idToken('person@example.com') } }));
+  await writeFile(join(userHome, 'v2.json'), JSON.stringify({ tokens: { access_token: 'v2', id_token: idToken('person@example.com') }, last_refresh: '2026-11-10T00:00:00Z' }));
   await first.switch({ type: 'codex', email: 'person@example.com' });
   second.confirmUpload = async () => true;
   await second.add(join(userHome, 'v2.json'));
@@ -247,7 +247,7 @@ test('基线区分本机领先、服务端领先和分歧，旧快照必须确�
   const session = await client.connect();
   context.after(() => session.close());
   const email = 'person@example.com';
-  const auth = (access: string) => JSON.stringify({ tokens: { access_token: access, id_token: idToken(email) }, last_refresh: access });
+  const auth = (access: string) => JSON.stringify({ tokens: { access_token: access, id_token: idToken(email) }, last_refresh: `2026-11-0${access.slice(1)}T00:00:00Z` });
   const source = join(userHome, 'source.json');
   await writeFile(source, auth('v1'));
   const { credential } = await session.add(source);

@@ -2,7 +2,7 @@ import { input, password, select } from '@inquirer/prompts';
 import { hostname } from 'node:os';
 import { emitKeypressEvents } from 'node:readline';
 import { styleText } from 'node:util';
-import { inputTheme, report, selectTheme, symbols } from './ui.js';
+import { inputTheme, refreshDetails, report, selectTheme, symbols } from './ui.js';
 
 export const BACK = Symbol('back');
 
@@ -37,9 +37,8 @@ export function isCancel(error: unknown): boolean {
 }
 
 export async function confirmUpload(details: Record<string, unknown>): Promise<boolean> {
-  const time = (value: unknown): string => typeof value === 'string' ? value : '未知';
   const answer = await escapable((context) => select({
-    message: `服务端已保存 ${styleText('cyan', String(details.email))}，内容与本次上传不同\n  ${styleText('dim', `本次上传的刷新时间：${time(details.localRefresh)}，服务端保存的刷新时间：${time(details.lastRefresh)}`)}`,
+    message: `服务端已保存 ${styleText('cyan', String(details.email))}，内容与本次上传不同\n  ${styleText('dim', refreshDetails(details.localRefresh, details.lastRefresh, '本次上传的'))}`,
     choices: [
       { value: false, name: '返回', description: '不做更改' },
       { value: true, name: '用本次上传覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
@@ -52,7 +51,7 @@ export async function confirmUpload(details: Record<string, unknown>): Promise<b
 
 export async function askRepair(url: string): Promise<boolean> {
   report(symbols.warning, styleText('yellow', `${url} 上的服务端不是之前配对的那个`), '未发送已保存的令牌');
-  return await select({
+  const answer = await escapable((context) => select({
     message: '要与这个服务端重新配对吗？',
     choices: [
       { value: false, name: '取消', description: '退出，客户端配置不变' },
@@ -60,7 +59,21 @@ export async function askRepair(url: string): Promise<boolean> {
     ],
     default: false,
     theme: selectTheme('取消'),
-  });
+  }, context));
+  return answer === true;
+}
+
+export async function confirmRestore(email: string | null): Promise<boolean> {
+  const answer = await escapable((context) => select({
+    message: email === null ? '无法识别这份凭证的账号，保存可能重新添加刚删除的账号。继续吗？' : `将重新保存刚删除的账号 ${styleText('cyan', email)}，继续吗？`,
+    choices: [
+      { value: false, name: '取消', description: '保留删除结果，本机登录不变' },
+      { value: true, name: email === null ? '确认保存' : '重新保存', description: '把这份凭证保存到服务端' },
+    ],
+    default: false,
+    theme: selectTheme('取消'),
+  }, context));
+  return answer === true;
 }
 
 export async function askPairing(url: string) {

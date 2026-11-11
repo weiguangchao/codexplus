@@ -21,6 +21,7 @@ import {
   menuTheme,
   needsBackup,
   renderStatus,
+  refreshDetails,
   selectTheme,
   switchChoices,
   symbols,
@@ -165,7 +166,7 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
   }
 }
 
-async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' }>, target: Credential) {
+async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' | 'deleted' }>, target: Credential) {
   const warning =
     current.status === 'ahead'
       ? `当前登录 ${current.email} 有更新尚未保存，切换后会被覆盖。`
@@ -188,7 +189,7 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead'
 }
 
 async function downloadCurrent(store: Session, email: string): Promise<boolean> {
-  if (!(await confirmRunningCodex({ ask: askRunningCodex, log: logRunningCodex }))) {
+  if (!(await confirmRunningCodex({ action: 'update', ask: askRunningCodex, log: logRunningCodex }))) {
     console.log('');
     return false;
   }
@@ -199,9 +200,9 @@ async function downloadCurrent(store: Session, email: string): Promise<boolean> 
 }
 
 async function resolveDivergence(store: Session, email: string, switching: boolean): Promise<'local' | 'server' | 'back'> {
-  const refreshTimes = await store.refreshTimes(email);
+  const times = await store.refreshTimes(email);
   const decision = await escapable((context) => select({
-    message: `${styleText('bold', email)} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshTimes)}`,
+    message: `${styleText('bold', email)} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshDetails(times.local, times.server))}`,
     choices: [
       { value: 'local' as const, name: switching ? '先用本机登录覆盖服务端，再切换' : '用本机登录覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
       switching
@@ -270,14 +271,14 @@ function logRunningCodex(message: string): void {
   }
 }
 
-async function askRunningCodex({ message }: { message: string; default: boolean }): Promise<boolean> {
+async function askRunningCodex({ message, action }: { message: string; default: boolean; action?: 'switch' | 'update' }): Promise<boolean> {
   const answer = await escapable((context) =>
     select(
       {
         message,
         choices: [
           { value: false, name: '取消，先退出 Codex', description: '回到主菜单，当前凭证不变' },
-          { value: true, name: '仍然切换', description: '正在运行的会话后续请求可能受影响' },
+          { value: true, name: action === 'update' ? '仍然更新' : '仍然切换', description: '将改写本机凭证，正在运行的会话后续请求可能受影响' },
         ],
         default: false,
         theme: selectTheme('取消'),
@@ -353,7 +354,7 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
   }
   try {
     await store.delete(selected);
-    report(symbols.success, `已删除 ${styleText('bold', selected.email)}`);
+    report(symbols.success, `已删除 ${styleText('bold', selected.email)}`, active ? '已从凭证库删除，本机登录保留' : undefined);
   } catch (error) {
     if (!(error instanceof ServiceError) || error.status !== 409) {
       throw error;
