@@ -353,8 +353,10 @@ async function main(): Promise<void> {
   }
 }
 
+function clientHome(store: Session): string { return store.home; }
+
 async function menu(store: Session): Promise<void> {
-  console.log(`${styleText('dim', '服务端  ')}  ${store.url}`);
+  console.log(`${styleText('dim', '服务端  ')}  ${store.server === 'local' ? `本机（目录 ${clientHome(store)}）` : store.url}`);
   for (;;) {
     const credentials = await store.list();
     const current = await store.current();

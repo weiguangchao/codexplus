@@ -12,7 +12,7 @@ export type Command =
   | { kind: 'admin'; home: string; url: string; action: AdminAction; id?: string };
 
 export const usage = [
-  'codexplus [--server 地址 | --local] [--port 端口] [--home 目录]',
+  'codexplus [--server 地址 | --local] [--home 目录]',
   'codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]',
   'codexplus serve pair|clients|revoke <客户端ID> [--port 端口 | --server 本机地址] [--home 目录]',
 ].join('\n');
@@ -64,9 +64,9 @@ export function parseCommand(args: string[]): Command {
   }
   const [command, action, id, ...rest] = positionals;
   if (command === undefined) {
-    allow('home', 'port', 'server', 'local');
+    allow('home', 'server', 'local');
     const target = values.server !== undefined ? serverUrl(values.server)
-      : values.local || port !== undefined ? localUrl(port ?? defaultPort) : undefined;
+      : values.local ? 'local' : undefined;
     return { kind: 'client', home, ...(target === undefined ? {} : { target }) };
   }
   if (command !== 'serve') {

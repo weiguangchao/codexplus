@@ -63,7 +63,7 @@ export function makeClient(context: TestContext, userHome: string, home = join(u
           await server.close();
         }
       });
-      return { async close() { if (open) { open = false; await server.close(); } } };
+      return { url: server.url, async close() { if (open) { open = false; await server.close(); } } };
     },
   });
   return { client, started };

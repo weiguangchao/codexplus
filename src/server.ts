@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerOptions as SecureOptions } from 'node:https';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { secretsMatch } from './local-codes.js';
 import { AccessStore } from './access.js';
 import { isRecord, parseAuth } from './auth.js';
 import { consumeLocalCode, createLocalCode, isLocalPurpose, isNonce, localEndpoint } from './local-codes.js';
@@ -46,8 +47,8 @@ function loopback(address: string | undefined): boolean {
 }
 
 export async function startServer({
-  home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, accountRequest = fetch,
-}: { home?: string; host?: string; port?: number; tls?: SecureOptions; accountRequest?: typeof fetch } = {}): Promise<{
+  home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, sessionToken, accountRequest = fetch,
+}: { home?: string; host?: string; port?: number; tls?: SecureOptions; sessionToken?: string; accountRequest?: typeof fetch } = {}): Promise<{
   url: string;
   close(): Promise<void>;
 }> {
@@ -126,7 +127,7 @@ export async function startServer({
     }
     const authorization = request.headers.authorization ?? '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-    const client = token ? await access.authorize(token) : null;
+    const client = token && sessionToken && secretsMatch(token, sessionToken) ? { id: 'local', name: '本机' } : token ? await access.authorize(token) : null;
     if (!client) {
       throw new HttpError(401, '客户端未获授权或授权已被撤销，需要重新配对。');
     }

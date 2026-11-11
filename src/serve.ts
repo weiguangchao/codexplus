@@ -15,7 +15,6 @@ export async function runServe(command: Extract<Command, { kind: 'serve' }>): Pr
   const server = await startServer({ home: command.home, host: command.host, port: command.port, ...(tls ? { tls } : {}) });
   console.log([
     `codexplus 服务端已启动：${server.url}（目录 ${command.home}）`,
-    '同一系统用户、同一 --home 的本机客户端会自动配对。',
     `生成远程配对码：codexplus serve pair --port ${command.port} --home ${command.home}`,
   ].join('\n'));
   const stop = (): void => { void server.close().catch(() => { process.exitCode = 1; }); };
