@@ -63,7 +63,7 @@ export class UploadCancelled extends Error {
 export class Session {
   private refreshes = new Map<string, unknown>();
   confirmUpload?: (details: Record<string, unknown>) => Promise<boolean>;
-  private digests = new Map<string, string>();
+  private digests = new Map<string, string | null>();
 
   constructor(
     readonly url: string,
@@ -86,10 +86,10 @@ export class Session {
     if (!isRecord(result) || !Array.isArray(result.credentials)) {
       throw new Error('服务端凭证列表格式无效。');
     }
-    const digests = new Map<string, string>();
+    const digests = new Map<string, string | null>();
     const credentials = result.credentials.map((entry: unknown) => {
       const credential = parseCredential(entry);
-      if (isRecord(entry) && typeof entry.digest === 'string') {
+      if (isRecord(entry) && (typeof entry.digest === 'string' || entry.digest === null)) {
         this.refreshes.set(credential.email, entry.lastRefresh);
         digests.set(credential.email, entry.digest);
       }
@@ -118,7 +118,7 @@ export class Session {
     const email = idTokenEmail(content);
     const baseline = (await this.owner?.config())?.baseline;
     const base = baseline?.server === this.server && baseline.email === email ? baseline.digest : null;
-    if (email === null || !saved.some((credential) => credential.email === email && this.digests.has(email))) {
+    if (email === null || !saved.some((credential) => credential.email === email && this.digests.get(email) != null)) {
       return { status: 'unsaved', email };
     }
     if (base === null) {
@@ -167,7 +167,7 @@ export class Session {
 
   async delete(credential: Credential): Promise<void> {
     const base = this.digests.get(credential.email);
-    if (!base) throw new Error('账号列表已变化，请刷新后重新选择。');
+    if (base === undefined) throw new Error('账号列表已变化，请刷新后重新选择。');
     await this.request('/v1/credentials/delete', { ...credential, base });
   }
 

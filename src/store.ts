@@ -55,14 +55,19 @@ export class CredentialStore {
     })));
   }
 
-  async delete(credential: Credential, base: string): Promise<void> {
+  async delete(credential: Credential, base: string | null): Promise<void> {
     await withLock(this.home, async () => {
       const selected = parseCredential(credential);
       const config = await this.readConfig();
       if (!config.credentials.some((entry) => entry.email === selected.email)) throw new Error('未找到所选凭证。');
       const path = join(this.credentialsPath, credentialFilename(selected.email));
-      const content = await readFile(path, 'utf8');
-      if (authDigest(content) !== base) throw conflict(selected.email, content);
+      let content: string | null;
+      let digest: string | null = null;
+      try {
+        content = await readFile(path, 'utf8');
+        digest = authDigest(content);
+      } catch { content = null; }
+      if (digest !== base) throw conflict(selected.email, content);
       await writeAtomic(this.configPath, `${JSON.stringify({ ...config, credentials: config.credentials.filter((entry) => entry.email !== selected.email) }, null, 2)}\n`);
       await rm(path, { force: true });
     });

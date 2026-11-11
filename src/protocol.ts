@@ -83,7 +83,7 @@ export async function requestService(url: string, path: string, token?: string, 
   return result;
 }
 
-export function conflict(email: string, content: string): ServiceError {
-  const auth = parseAuth(content);
-  return new ServiceError(409, '服务端版本已更新，请确认是否覆盖。', { code: 'conflict', email, digest: authDigest(content), lastRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null });
+export function conflict(email: string, content: string | null): ServiceError {
+  const auth = content === null ? null : parseAuth(content);
+  return new ServiceError(409, '服务端版本已更新，请确认是否覆盖。', { code: 'conflict', email, digest: content === null ? null : authDigest(content), lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null });
 }

@@ -102,7 +102,7 @@ export async function startServer({
         }
         const credential = parseCredential(body);
         if (path === '/v1/credentials/delete') {
-          if (typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要。');
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要或 null。');
           await store.delete(credential, body.base);
           await recordCommitted(home, '删除', client, { email: credential.email });
           return { ok: true };

@@ -13,6 +13,7 @@ import { confirmRunningCodex } from './switch.js';
 import {
   addChoices,
   describeCurrent,
+  deleteChoices,
   inputTheme,
   line,
   report,
@@ -329,10 +330,7 @@ async function switchFlow(store: Session, credentials: Credential[], current: Cu
 async function deleteFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<void> {
   const selected = await escapable((context) => select({
     message: '删除哪个账号？',
-    choices: [
-      ...credentials.map((credential) => ({ value: credential as Credential | null, name: credential.email })),
-      { value: null, name: '返回', description: '回到主菜单' },
-    ],
+    choices: deleteChoices(credentials, (email) => store.snapshotDigest(email)),
     default: null,
     theme: selectTheme('返回'),
     pageSize: 10,

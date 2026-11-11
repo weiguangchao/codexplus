@@ -146,6 +146,17 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin) 
   return { choices, default: first };
 }
 
+export function deleteChoices(credentials: Credential[], digest: (email: string) => string | null) {
+  return [
+    ...credentials.map((credential) => ({
+      value: credential as Credential | null,
+      name: credential.email,
+      ...(digest(credential.email) === null ? { description: '服务端保存的凭证文件缺失或损坏' } : {}),
+    })),
+    { value: null, name: '返回', description: '回到主菜单' },
+  ];
+}
+
 export function addChoices(current: CurrentLogin) {
   const codexDescription =
     current.status === 'none'

@@ -87,7 +87,7 @@ codexplus serve revoke <客户端ID>
 
 撤销后客户端下次连接会提示授权已失效并要求重新配对。撤销访问授权不会删除客户端已经下载的 `~/.codex/auth.json`，也不会使其持有的账户 token 在 ChatGPT 上失效。
 
-删除账号需要再次确认（默认取消），按列表摘要提交；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。`serve clients` 显示最近访问时间，无记录为「从未」，每分钟最多更新一次。
+删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。`serve clients` 显示最近访问时间，无记录为「从未」，每分钟最多更新一次。
 
 `codexplus serve log [--limit 条数] [--home 目录]` 按时间顺序显示最近操作，默认 50 条。记录成功的下载、上传、删除、配对、撤销，最多保存 1000 条，不含 token 或凭证内容；每条包含时间、事件、操作者的客户端 ID 和名称，以及账号邮箱或被撤销的客户端。本机模式的操作者记为「本机」，管理命令记为「管理命令」。配对、上传、删除和撤销在完成后记录，记录写入失败不影响结果，只在服务端输出一行警告；下载在返回凭证前记录，记录失败时不返回凭证。
 
@@ -150,7 +150,7 @@ HTTP 协议版本为 2；连接前检查服务名称和版本，不兼容时不�
 | GET /v1/credentials | 账号、摘要、lastRefresh |
 | POST /v1/credentials | 上传 `{ auth, base }` |
 | POST /v1/credentials/download | 按 type、email 下载 |
-| POST /v1/credentials/delete | 按 type、email、base 条件删除 |
+| POST /v1/credentials/delete | 按 type、email、base（摘要或 null，必填）条件删除 |
 
 旧的 local-codes/ 目录不再读取或写入，可以自行删除。交互流程在 src/flows.ts，配对、重新配对和覆盖确认的提示在 src/prompts.ts。
 
