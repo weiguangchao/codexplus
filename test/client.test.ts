@@ -252,6 +252,7 @@ test('会话期间服务端被替换时，下一次请求前重新验证，不�
   assert.deepEqual(await session.list(), []);
   await server.close();
   const fake = await fakeServer(context, port);
+  await session.list().catch(() => {});
   await assert.rejects(session.list(), /无法证明.*未发送令牌/u);
   assert.deepEqual(fake.authorizations, []);
 });

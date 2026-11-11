@@ -38,7 +38,14 @@ export async function standalone(context: TestContext, home: string, port = 0, a
       await server.close();
     }
   });
-  return { url: server.url, async close() { open = false; await server.close(); } };
+  return {
+    url: server.url,
+    async close() {
+      open = false;
+      await server.close();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    },
+  };
 }
 
 export function makeClient(context: TestContext, userHome: string, home = join(userHome, '.codexplus')) {
