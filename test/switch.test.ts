@@ -9,7 +9,7 @@ import { switchCredential } from '../src/switch.js';
 test('有运行中的进程时显示 PID，默认取消且不修改当前凭证', async (context) => {
   const home = await mkdtemp(join(tmpdir(), 'codexplus-switch-'));
   context.after(() => rm(home, { recursive: true, force: true }));
-  const store = new CredentialStore(home, async () => Response.json({ email: 'person@example.com' }));
+  const store = new CredentialStore({ userHome: home, request: async () => Response.json({ email: 'person@example.com' }) });
   const source = join(home, 'input.json');
   await writeFile(source, '{"tokens":{"access_token":"fake-new-access"}}');
   const credential = await store.add(source);
