@@ -153,7 +153,7 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致且没有�
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'refreshed', id_token: idToken('person@example.com') } }));
   assert.deepEqual(await session.current(), { status: 'diverged', email: 'person@example.com' });
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { id_token: idToken('person@example.com') } }));
-  assert.deepEqual(await session.current(), { status: 'diverged', email: 'person@example.com' });
+  assert.equal((await session.current()).status, 'invalid');
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'other', id_token: idToken('other@example.com') } }));
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'other@example.com' });
   await writeFile(session.codexAuthPath, '{"tokens":{"access_token":"x","id_token":"not-a-jwt"}}');

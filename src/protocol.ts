@@ -14,12 +14,19 @@ export interface UploadResult {
 
 export type CurrentLogin =
   | { status: 'none' }
+  | { status: 'invalid'; reason: string }
   | { status: 'saved'; email: string }
   | { status: 'ahead'; email: string }
   | { status: 'behind'; email: string }
   | { status: 'diverged'; email: string }
   | { status: 'deleted'; email: string }
   | { status: 'unsaved'; email: string | null };
+
+export class PairingCancelled extends Error {
+  constructor() {
+    super('已取消配对，客户端配置未更改。');
+  }
+}
 
 export class ServiceError extends Error {
   constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}) {

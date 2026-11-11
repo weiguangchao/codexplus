@@ -2,6 +2,7 @@ import { input, password, select } from '@inquirer/prompts';
 import { hostname } from 'node:os';
 import { emitKeypressEvents } from 'node:readline';
 import { styleText } from 'node:util';
+import { PairingCancelled } from './protocol.js';
 import { inputTheme, refreshDetails, report, selectTheme, symbols } from './ui.js';
 
 export const BACK = Symbol('back');
@@ -78,10 +79,26 @@ export async function confirmRestore(email: string | null): Promise<boolean> {
 
 export async function askPairing(url: string) {
   report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus serve pair 获取配对码');
-  const code = await password({ message: '服务端生成的配对码', mask: true, theme: inputTheme,
-    validate: (value) => Boolean(value.trim()) || '请输入配对码。' });
-  const name = await input({ message: '客户端名称', default: hostname(), theme: inputTheme,
-    validate: (value) => (Boolean(value.trim()) && value.length <= 100) || '请输入名称，最多 100 字符。' });
+  const code = await escapable((context) => password({ message: '服务端生成的配对码 (esc 取消)', mask: true, theme: inputTheme,
+    validate: (value) => Boolean(value.trim()) || '请输入配对码。' }, context));
+  if (code === BACK) throw new PairingCancelled();
+  const name = await escapable((context) => input({ message: '客户端名称 (esc 取消)', default: hostname(), theme: inputTheme,
+    validate: (value) => (Boolean(value.trim()) && value.length <= 100) || '请输入名称，最多 100 字符。' }, context));
+  if (name === BACK) throw new PairingCancelled();
   console.log('');
   return { code, name };
+}
+
+export async function retryPairing(message: string): Promise<boolean> {
+  report(symbols.warning, styleText('yellow', message));
+  const answer = await escapable((context) => select({
+    message: '要重新输入配对码吗？',
+    choices: [
+      { value: true, name: '重新输入', description: '使用新的或正确的配对码重试' },
+      { value: false, name: '取消配对', description: '退出，客户端配置不变' },
+    ],
+    default: true,
+    theme: selectTheme('取消'),
+  }, context));
+  return answer === true;
 }

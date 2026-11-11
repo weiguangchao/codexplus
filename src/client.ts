@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { authDigest, idTokenEmail, isRecord, newerRefresh, parseAuth } from './auth.js';
 import { expandPath, readOptional, writeAtomic } from './files.js';
-import { isLoopbackUrl, parseCredential, requestService, serverUrl, ServiceError } from './protocol.js';
+import { isLoopbackUrl, PairingCancelled, parseCredential, requestService, serverUrl, ServiceError } from './protocol.js';
 import type { Credential, CurrentLogin, UploadResult } from './protocol.js';
 import { startServer } from './server.js';
 
@@ -31,6 +31,7 @@ export interface ConnectOptions {
   target?: string;
   askRepair?: (url: string) => Promise<boolean>;
   askPairing?: (url: string) => Promise<Pairing>;
+  retryPairing?: (message: string) => Promise<boolean>;
   log?: (message: string) => void;
 }
 
@@ -102,18 +103,22 @@ export class Session {
   }
 
   async current(): Promise<CurrentLogin> {
-    const content = await readOptional(this.codexAuthPath).catch(() => '');
+    let content: string | null;
+    try { content = await readOptional(this.codexAuthPath); } catch {
+      return { status: 'invalid', reason: '无法读取登录文件，请检查路径和文件权限。' };
+    }
     if (content === null) {
       return { status: 'none' };
     }
-    const saved = await this.list();
-    let login: string | null = null;
+    let auth;
     try {
-      login = authDigest(content);
-    } catch {
-      login = null;
+      auth = parseAuth(content);
+    } catch (error) {
+      return { status: 'invalid', reason: error instanceof Error ? error.message : '登录文件格式无效。' };
     }
-    const match = saved.find((credential) => login !== null && this.digests.get(credential.email) === login);
+    const saved = await this.list();
+    const login = authDigest(content);
+    const match = saved.find((credential) => this.digests.get(credential.email) === login);
     if (match) {
       return { status: 'saved', email: match.email };
     }
@@ -128,9 +133,7 @@ export class Session {
     if (base === null) {
       return { status: 'diverged', email };
     }
-    let localRefresh: unknown;
-    try { localRefresh = parseAuth(content).last_refresh; } catch { localRefresh = null; }
-    const newer = newerRefresh(localRefresh, this.refreshes.get(email));
+    const newer = newerRefresh(auth.last_refresh, this.refreshes.get(email));
     return { status: this.digests.get(email) === base && newer === 'local' ? 'ahead' : login === base && newer === 'server' ? 'behind' : 'diverged', email };
   }
 
@@ -220,13 +223,13 @@ export class CredentialClient {
   private readonly userHome: string;
   private readonly startLocal: StartLocal;
 
-  constructor({ userHome = homedir(), home = join(userHome, '.codexplus'), startLocal = startServer }:
-    { home?: string; userHome?: string; startLocal?: StartLocal } = {}) {
+  constructor({ userHome = homedir(), home = join(userHome, '.codexplus'), codexHome = process.env.CODEX_HOME?.trim() || join(userHome, '.codex'), startLocal = startServer }:
+    { home?: string; userHome?: string; codexHome?: string; startLocal?: StartLocal } = {}) {
     this.home = home;
     this.userHome = userHome;
     this.startLocal = startLocal;
     this.configPath = join(home, 'client.json');
-    this.codexAuthPath = join(userHome, '.codex', 'auth.json');
+    this.codexAuthPath = join(expandPath(userHome, codexHome), 'auth.json');
   }
 
   async config(): Promise<ClientConfig> {
@@ -281,15 +284,22 @@ export class CredentialClient {
     }
   }
 
-  private async manualPair(url: string, askPairing: ConnectOptions['askPairing']): Promise<ServerEntry> {
+  private async manualPair(url: string, askPairing: ConnectOptions['askPairing'], retryPairing: ConnectOptions['retryPairing']): Promise<ServerEntry> {
     if (!askPairing) {
       throw new Error(`${url} 需要配对码，请在服务端运行 codexplus serve pair 生成。`);
     }
-    const { code, name } = await askPairing(url);
-    return parsePairResult(await requestService(url, '/v1/pair', undefined, { code: code.trim(), name: name.trim() }));
+    for (;;) {
+      const { code, name } = await askPairing(url);
+      try {
+        return parsePairResult(await requestService(url, '/v1/pair', undefined, { code: code.trim(), name: name.trim() }));
+      } catch (error) {
+        if (!(error instanceof ServiceError) || error.status !== 400 || !retryPairing) throw error;
+        if (!await retryPairing(error.message)) throw new PairingCancelled();
+      }
+    }
   }
 
-  async connect({ target, askPairing, askRepair, log = console.log }: ConnectOptions = {}): Promise<Session> {
+  async connect({ target, askPairing, askRepair, retryPairing, log = console.log }: ConnectOptions = {}): Promise<Session> {
     const config = await this.config();
     const server = target ?? config.current;
     if (server === 'local') {
@@ -318,7 +328,7 @@ export class CredentialClient {
       log(`${url} 的授权已失效或已被撤销，需要重新配对。`);
       entry = undefined;
     }
-    entry ??= await this.manualPair(url, askPairing);
+    entry ??= await this.manualPair(url, askPairing, retryPairing);
     entry = { ...entry, serverId: id };
     await withLock(this.home, async () => {
       const latest = await this.config();

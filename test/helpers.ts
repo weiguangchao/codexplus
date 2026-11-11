@@ -52,6 +52,7 @@ export function makeClient(context: TestContext, userHome: string, home = join(u
   const client = new CredentialClient({
     home,
     userHome,
+    codexHome: join(userHome, '.codex'),
     startLocal: async (options) => {
       const server = await startServer({ ...options, accountRequest: account });
       started.push(server.url);

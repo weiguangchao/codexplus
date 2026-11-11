@@ -53,7 +53,7 @@ export function needsBackup(current: CurrentLogin): current is Extract<CurrentLo
   return current.status === 'ahead' || current.status === 'diverged' || current.status === 'unsaved' || current.status === 'deleted';
 }
 
-export function describeCurrent(current: CurrentLogin): string {
+export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth.json'): string {
   const dot = (color: 'green' | 'yellow') => styleText(color, dots.filled);
   if (current.status === 'saved') {
     return `${dot('green')} ${styleText('bold', current.email)}`;
@@ -73,7 +73,10 @@ export function describeCurrent(current: CurrentLogin): string {
       ? `${dot('yellow')} ${styleText('yellow', '无法识别')} ${styleText('dim', '与已保存的账号都不一致')}`
       : `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '未保存')}`;
   }
-  return styleText('dim', `${dots.empty} 未登录（未找到 ~/.codex/auth.json）`);
+  if (current.status === 'invalid') {
+    return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
+  }
+  return styleText('dim', `${dots.empty} 未登录（未找到 ${authPath}）`);
 }
 
 export function renderTitle(version: string): string {
@@ -81,15 +84,15 @@ export function renderTitle(version: string): string {
   return `\n${styleText(['bold', 'cyan'], 'codexplus')} ${styleText('dim', meta)}\n`;
 }
 
-export function renderStatus(current: CurrentLogin, count: number): string {
+export function renderStatus(current: CurrentLogin, count: number, authPath = '~/.codex/auth.json'): string {
   const saved = count === 0 ? styleText('dim', '暂无') : `${count} 个`;
   return [
-    `${styleText('dim', '当前账号')}  ${describeCurrent(current)}`,
+    `${styleText('dim', '当前账号')}  ${describeCurrent(current, authPath)}`,
     `${styleText('dim', '已保存  ')}  ${saved}`,
   ].join('\n');
 }
 
-export function mainChoices(credentials: Credential[], current: CurrentLogin) {
+export function mainChoices(credentials: Credential[], current: CurrentLogin, authPath = '~/.codex/auth.json') {
   const active = activeEmail(current);
   const others = credentials.filter((credential) => credential.email !== active).length;
   const switchDescription =
@@ -99,18 +102,20 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
         ? '已保存的账号只有当前这一个，请先添加其他账号。'
         : active === null ? `从 ${others} 个已保存的账号中选择一个` : `从 ${others} 个其他账号中选择一个`;
   const addDescription =
-    current.status === 'deleted'
-      ? '将重新保存刚删除的账号，需要再次确认。'
-      : current.status === 'unsaved'
-        ? '当前 Codex 登录尚未保存，建议先保存。'
-        : current.status === 'ahead'
-          ? '当前登录有更新，可以重新保存以更新凭证。'
-          : current.status === 'diverged'
-            ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
-            : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
+    current.status === 'invalid'
+      ? '当前登录文件无效，请先重新登录，或从其他文件添加有效凭证。'
+      : current.status === 'deleted'
+        ? '将重新保存刚删除的账号，需要再次确认。'
+        : current.status === 'unsaved'
+          ? '当前 Codex 登录尚未保存，建议先保存。'
+          : current.status === 'ahead'
+            ? '当前登录有更新，可以重新保存以更新凭证。'
+            : current.status === 'diverged'
+              ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
+              : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
     ...(current.status === 'behind'
-      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ~/.codex/auth.json` }]
+      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ${authPath}` }]
       : []),
     {
       value: 'switch' as const,
@@ -129,7 +134,9 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
     { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
   ];
   const fallback: MainAction = others === 0 || needsBackup(current) ? 'add' : 'switch';
-  return { choices, default: current.status === 'deleted' ? 'exit' as const : current.status === 'behind' ? 'update' as const : fallback };
+  const defaultAction: MainAction = current.status === 'invalid' ? others > 0 ? 'switch' : 'exit'
+    : current.status === 'deleted' ? 'exit' : current.status === 'behind' ? 'update' : fallback;
+  return { choices, default: defaultAction };
 }
 
 export function refreshDetails(local: unknown, server: unknown, localLabel = '本机'): string {
@@ -172,21 +179,23 @@ export function deleteChoices(credentials: Credential[], digest: (email: string)
   ];
 }
 
-export function addChoices(current: CurrentLogin) {
+export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json') {
   const codexDescription =
     current.status === 'none'
-      ? '未找到 ~/.codex/auth.json，请先在 Codex 中登录'
-      : current.status === 'saved'
-        ? `${current.email} 已保存，与当前登录一致，无需更新`
-        : current.status === 'ahead'
-          ? `${current.email} 有更新，将用当前登录更新已保存的凭证`
-          : `~/.codex/auth.json${current.email === null ? '' : ` · ${current.email}`}`;
+      ? `未找到 ${authPath}，请先在 Codex 中登录`
+      : current.status === 'invalid'
+        ? '登录文件无效或无法读取，请先在 Codex 中重新登录'
+        : current.status === 'saved'
+          ? `${current.email} 已保存，与当前登录一致，无需更新`
+          : current.status === 'ahead'
+            ? `${current.email} 有更新，将用当前登录更新已保存的凭证`
+            : `${authPath}${current.email === null ? '' : ` · ${current.email}`}`;
   return [
     {
       value: 'codex' as AddSource,
       name: '当前 Codex 登录',
       description: codexDescription,
-      disabled: current.status === 'none' ? styleText('dim', '(未登录)') : false,
+      disabled: current.status === 'none' ? styleText('dim', '(未登录)') : current.status === 'invalid' ? styleText('dim', '(登录文件无效)') : false,
     },
     { value: 'file' as AddSource, name: '其他文件…', description: '手动输入 auth.json 的路径' },
     divider(),

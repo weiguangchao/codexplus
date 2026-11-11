@@ -6,7 +6,8 @@ import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { runAdmin, runServe } from './serve.js';
 import { menu } from './flows.js';
-import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel } from './prompts.js';
+import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel, retryPairing } from './prompts.js';
+import { PairingCancelled } from './protocol.js';
 import { cancelled, line, renderTitle, report, symbols } from './ui.js';
 
 function readVersion(): string {
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   const store = await client.connect({
     ...(command.target === undefined ? {} : { target: command.target }),
     askPairing,
+    retryPairing,
     askRepair,
     log: (message) => report(symbols.info, message),
   });
@@ -54,6 +56,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  if (error instanceof PairingCancelled) {
+    report(symbols.info, error.message);
+    return;
+  }
   if (isCancel(error)) {
     cancelled();
     return;

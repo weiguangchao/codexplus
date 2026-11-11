@@ -15,6 +15,9 @@ export const usage = [
   'codexplus [--server 地址 | --local] [--home 目录]',
   'codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]',
   'codexplus serve pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]',
+  '',
+  '仅支持 ChatGPT 登录凭证，不接受只有 API key 的文件。',
+  '登录文件：$CODEX_HOME/auth.json；未设置 CODEX_HOME 时使用 ~/.codex/auth.json。',
 ].join('\n');
 
 function resolveHome(value: string | undefined): string {
