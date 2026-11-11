@@ -47,6 +47,7 @@ export async function startServer({
   close(): Promise<void>;
 }> {
   const access = new AccessStore(home);
+  const id = await access.instanceId();
   const store = new CredentialStore({ home, request: accountRequest });
 
   function clientName(value: unknown): string {
@@ -62,7 +63,7 @@ export async function startServer({
     }
     const path = request.url ?? '';
     if (request.method === 'GET' && path === '/v1/health') {
-      return { service: 'codexplus', version: 2 };
+      return { service: 'codexplus', version: 2, id };
     }
     if (request.method === 'POST' && path === '/v1/pair') {
       if (typeof body.code !== 'string' || body.code.length > 128) {

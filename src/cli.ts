@@ -340,6 +340,7 @@ async function main(): Promise<void> {
   const store = await client.connect({
     ...(command.target === undefined ? {} : { target: command.target }),
     askPairing,
+    askRepair: async (message) => await select({ message, choices: [{ value: false, name: '取消' }, { value: true, name: '重新配对' }], default: false }),
     log: (message) => report(symbols.info, message),
   });
   store.confirmUpload = async (details) => {

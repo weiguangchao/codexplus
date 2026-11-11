@@ -22,7 +22,8 @@ test('两个本机客户端使用独立端口，退出一个不影响另一个',
   assert.deepEqual(await second.list(), []);
   assert.equal((await client.config()).current, 'local');
   assert.deepEqual((await client.config()).servers, {});
-  await assert.rejects(readFile(join(client.home, 'server-access.json')), { code: 'ENOENT' });
+  const access = JSON.parse(await readFile(join(client.home, 'server-access.json'), 'utf8')) as { clients: unknown[] };
+  assert.equal(access.clients.length, 0);
 });
 
 test('连接过的服务端全部保存并记住当前连接，不同目录的服务端需要手动配对', async (context) => {
@@ -216,4 +217,23 @@ test('版本一迁移丢弃自动配对，保留手动配对和相应基线', as
     assert.deepEqual(Object.keys(config.servers), [remote]);
     assert.equal(config.baseline, null);
   }
+});
+
+test('同地址换库先确认实例，不发送旧令牌，确认后重新配对', async (context) => {
+  const userHome = await temporaryHome(context);
+  const firstHome = await temporaryHome(context);
+  const nextHome = await temporaryHome(context);
+  const first = await standalone(context, firstHome);
+  const { client } = makeClient(context, userHome);
+  await (await client.connect({ target: first.url, askPairing: async () => ({ code: await pairCode(first.url, firstHome), name: '旧' }) })).close();
+  const before = await readFile(client.configPath, 'utf8');
+  await first.close();
+  const next = await standalone(context, nextHome, Number(new URL(first.url).port));
+  await assert.rejects(client.connect(), /不是之前配对/u);
+  assert.equal(await readFile(client.configPath, 'utf8'), before);
+  await assert.rejects(client.connect({ askRepair: async () => false }), /不是之前配对/u);
+  assert.equal(await readFile(client.configPath, 'utf8'), before);
+  await (await client.connect({ askRepair: async () => true, askPairing: async () => ({ code: await pairCode(next.url, nextHome), name: '新' }) })).close();
+  assert.notEqual((await client.config()).servers[next.url]?.serverId, JSON.parse(before).servers[next.url].serverId);
+  assert.equal((await client.config()).baseline, null);
 });

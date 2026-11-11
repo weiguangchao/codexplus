@@ -29,6 +29,7 @@ export interface Pairing {
 
 export interface ConnectOptions {
   target?: string;
+  askRepair?: (message: string) => Promise<boolean>;
   askPairing?: (url: string) => Promise<Pairing>;
   log?: (message: string) => void;
 }
@@ -203,10 +204,12 @@ export class CredentialClient {
     });
   }
 
-  private async checkService(url: string): Promise<void> {
+  private async checkService(url: string): Promise<string> {
     const result = await requestService(url, '/v1/health');
     if (!isRecord(result) || result.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
     if (result.version !== 2) throw new Error('版本不兼容，请把两端升级到同一版本。');
+    if (typeof result.id !== 'string' || !result.id) throw new Error('服务端实例信息无效。');
+    return result.id;
   }
 
   private async valid(url: string, token: string): Promise<boolean> {
@@ -229,7 +232,7 @@ export class CredentialClient {
     return parsePairResult(await requestService(url, '/v1/pair', undefined, { code: code.trim(), name: name.trim() }));
   }
 
-  async connect({ target, askPairing, log = console.log }: ConnectOptions = {}): Promise<Session> {
+  async connect({ target, askPairing, askRepair, log = console.log }: ConnectOptions = {}): Promise<Session> {
     const config = await this.config();
     const server = target ?? config.current;
     if (server === 'local') {
@@ -244,16 +247,24 @@ export class CredentialClient {
       } catch (error) { await embedded.close(); throw error; }
     }
     const url = serverUrl(server);
-    await this.checkService(url);
+    const id = await this.checkService(url);
+    let replaced = false;
     let entry = config.servers[url];
+    if (entry?.serverId && entry.serverId !== id) {
+      const message = '该地址上的服务端不是之前配对的那个';
+      if (!await askRepair?.(`${message}，是否重新配对？`)) throw new Error(message);
+      entry = undefined;
+      replaced = true;
+    }
     if (entry && !await this.valid(url, entry.token)) {
       log(`${url} 的授权已失效或已被撤销，需要重新配对。`);
       entry = undefined;
     }
     entry ??= await this.manualPair(url, askPairing);
+    entry = { ...entry, serverId: id };
     await withLock(this.home, async () => {
       const latest = await this.config();
-      await writeAtomic(this.configPath, `${JSON.stringify({ ...latest, current: url, servers: { ...latest.servers, [url]: entry } }, null, 2)}\n`);
+      await writeAtomic(this.configPath, `${JSON.stringify({ ...latest, current: url, baseline: replaced ? null : latest.baseline, servers: { ...latest.servers, [url]: entry } }, null, 2)}\n`);
     });
     return new Session(url, entry.token, this.userHome, this.codexAuthPath, async () => {}, this, server);
   }

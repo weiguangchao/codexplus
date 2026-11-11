@@ -18,6 +18,7 @@ export interface PairedClient {
 
 interface AccessState {
   version: 1;
+  id?: string;
   pair: { digest: string; expiresAt: number } | null;
   clients: (PairedClient & { digest: string })[];
 }
@@ -28,7 +29,7 @@ function digest(value: string): string {
 
 function parseState(content: string): AccessState {
   const state: unknown = JSON.parse(content);
-  if (!isRecord(state) || state.version !== 1 || !Array.isArray(state.clients) ||
+  if (!isRecord(state) || state.version !== 1 || !Array.isArray(state.clients) || (state.id !== undefined && typeof state.id !== 'string') ||
     !(state.pair === null || (isRecord(state.pair) && typeof state.pair.digest === 'string' &&
       typeof state.pair.expiresAt === 'number')) ||
     !state.clients.every((client: unknown) => isRecord(client) && typeof client.id === 'string' &&
@@ -59,6 +60,14 @@ export class AccessStore {
 
   private async save(state: AccessState): Promise<void> {
     await writeAtomic(this.path, `${JSON.stringify(state, null, 2)}\n`);
+  }
+
+  async instanceId(): Promise<string> {
+    return await withLock(this.home, async () => {
+      const state = await this.read();
+      if (!state.id) { state.id = randomUUID(); await this.save(state); }
+      return state.id;
+    });
   }
 
   async check(): Promise<void> { return await withLock(this.home, () => this.checkUnlocked()); }
