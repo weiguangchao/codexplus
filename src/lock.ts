@@ -16,6 +16,33 @@ function lockTime(content: string): number | null {
   }
 }
 
+function busy(error: unknown): boolean {
+  return isRecord(error) && (error.code === 'EEXIST' || process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code)));
+}
+
+async function age(path: string, content: string | null): Promise<number> {
+  return Date.now() - ((content === null ? null : lockTime(content)) ?? (await stat(path)).mtimeMs);
+}
+
+async function reclaim(path: string): Promise<void> {
+  const seen = await readOptional(path);
+  if (seen === null || await age(path, seen) <= 30_000) return;
+  const guard = `${path}.reclaim`;
+  try {
+    await (await open(guard, 'wx', 0o600)).close();
+  } catch (error) {
+    if (!busy(error)) throw error;
+    if (await age(guard, null) > 30_000) await rm(guard, { force: true });
+    return;
+  }
+  try {
+    const current = await readOptional(path);
+    if (current !== null && await age(path, current) > 30_000) await rm(path, { force: true });
+  } finally {
+    await rm(guard, { force: true });
+  }
+}
+
 async function acquire(home: string): Promise<() => Promise<void>> {
   await mkdir(home, { recursive: true, mode: 0o700 });
   const path = join(home, '.lock');
@@ -27,14 +54,10 @@ async function acquire(home: string): Promise<() => Promise<void>> {
       try { await handle.writeFile(content); } finally { await handle.close(); }
       return async () => { if (await readOptional(path) === content) await rm(path, { force: true }); };
     } catch (error) {
-      if (!isRecord(error) || !(error.code === 'EEXIST' || process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code)))) throw error;
+      if (!busy(error)) throw error;
     }
     try {
-      const old = await readOptional(path);
-      if (old !== null) {
-        const created = lockTime(old) ?? (await stat(path)).mtimeMs;
-        if (Date.now() - created > 30_000 && await readOptional(path) === old) await rm(path, { force: true });
-      }
+      await reclaim(path);
     } catch (error) {
       if (!isRecord(error) || !['ENOENT', 'EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))) throw error;
     }

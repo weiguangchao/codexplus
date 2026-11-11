@@ -45,6 +45,23 @@ test('进程在写入锁内容前崩溃留下的空锁按文件时间回收，�
   assert.equal(await waiting, 'late');
 });
 
+test('回收残留锁时互斥：别的进程正在回收就等待，回收标记自身残留时清掉', async (context) => {
+  const home = await temporaryHome(context);
+  const path = join(home, '.lock');
+  const guard = join(home, '.lock.reclaim');
+  const stale = JSON.stringify({ time: Date.now() - 31_000 });
+  await writeFile(path, stale);
+  await writeFile(guard, '');
+  const waiting = withLock(home, async () => 'acquired');
+  const first = await Promise.race([waiting, new Promise((resolve) => setTimeout(() => resolve('still waiting'), 300))]);
+  assert.equal(first, 'still waiting');
+  assert.equal(await readFile(path, 'utf8'), stale);
+  const old = new Date(Date.now() - 31_000);
+  await utimes(guard, old, old);
+  assert.equal(await waiting, 'acquired');
+  assert.deepEqual((await readdir(home)).filter((name) => name.startsWith('.lock')), []);
+});
+
 test('同目录双服务端并发上传保留索引，慢查询不阻塞健康接口', async (context) => {
   const home = await temporaryHome(context);
   let release!: () => void;
