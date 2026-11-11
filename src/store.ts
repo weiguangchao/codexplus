@@ -2,12 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { credentialFilename, isRecord, lookupAccount, parseAuth } from './auth.js';
+import { credentialFilename, idTokenEmail, isRecord, lookupAccount, parseAuth } from './auth.js';
 
 export interface Credential {
   type: 'codex';
   email: string;
 }
+
+export type CurrentLogin =
+  | { status: 'none' }
+  | { status: 'saved'; email: string }
+  | { status: 'stale'; email: string }
+  | { status: 'unsaved'; email: string | null };
 
 interface Config {
   version: 1;
@@ -42,11 +48,30 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   }
 }
 
+function normalizeAuth(content: string): string | null {
+  try {
+    return JSON.stringify(parseAuth(content));
+  } catch {
+    return null;
+  }
+}
+
+export function expandPath(home: string, path: string): string {
+  let trimmed = path.trim();
+  const quote = trimmed[0];
+  if (trimmed.length >= 2 && (quote === '"' || quote === "'") && trimmed.endsWith(quote)) {
+    trimmed = trimmed.slice(1, -1);
+  } else if (process.platform !== 'win32') {
+    trimmed = trimmed.replaceAll('\\ ', ' ');
+  }
+  return trimmed === '~' ? home : trimmed.startsWith('~/') ? join(home, trimmed.slice(2)) : resolve(trimmed);
+}
+
 export class CredentialStore {
   readonly configPath: string;
   readonly credentialsPath: string;
   readonly codexAuthPath: string;
-  private readonly userHome: string;
+  readonly userHome: string;
   private readonly request: typeof fetch;
 
   constructor({ userHome = homedir(), home = join(userHome, '.codexplus'), request = fetch }: StoreOptions = {}) {
@@ -86,13 +111,36 @@ export class CredentialStore {
     return config.credentials.toSorted((left, right) => left.email.localeCompare(right.email));
   }
 
+  async current(credentials?: Credential[]): Promise<CurrentLogin> {
+    const content = await readOptional(this.codexAuthPath).catch(() => '');
+    if (content === null) {
+      return { status: 'none' };
+    }
+    const saved = credentials ?? (await this.list());
+    const login = normalizeAuth(content);
+    const backups = new Map<string, string>();
+    for (const credential of saved) {
+      const snapshot = await readOptional(join(this.credentialsPath, credentialFilename(credential.email))).catch(() => null);
+      const normalized = snapshot === null ? null : normalizeAuth(snapshot);
+      if (normalized !== null) {
+        backups.set(credential.email, normalized);
+      }
+    }
+    for (const [email, snapshot] of backups) {
+      if (login !== null && snapshot === login) {
+        return { status: 'saved', email };
+      }
+    }
+    const email = idTokenEmail(content);
+    return email !== null && backups.has(email) ? { status: 'stale', email } : { status: 'unsaved', email };
+  }
+
   async add(sourcePath: string): Promise<Credential> {
     const path = sourcePath.trim();
     if (!path) {
       throw new Error('请输入 auth.json 文件路径。');
     }
-    const expanded = path === '~' ? this.userHome : path.startsWith('~/') ? join(this.userHome, path.slice(2)) : resolve(path);
-    const content = await readFile(expanded, 'utf8');
+    const content = await readFile(expandPath(this.userHome, path), 'utf8');
     const auth = parseAuth(content);
     const config = await this.readConfig();
     const { email } = await lookupAccount(auth.tokens, this.request);

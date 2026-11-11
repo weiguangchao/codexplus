@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { parseHome } from '../src/options.js';
-import { CredentialStore } from '../src/store.js';
+import { CredentialStore, expandPath } from '../src/store.js';
 
 const original = '{\n  "tokens": {"access_token": "fake-access", "refresh_token": "fake-refresh", "id_token": "fake-id", "extra": true},\n  "last_refresh": "2026-11-11T00:00:00Z",\n  "extra": true\n}\n';
 const filtered = `${JSON.stringify({
@@ -272,5 +272,56 @@ test('Unix 上的凭证和配置权限为 0600，新增目录为 0700', { skip: 
   }
   for (const path of [join(home, '.codexplus'), store.credentialsPath, join(home, '.codex')]) {
     assert.equal((await stat(path)).mode & 0o777, 0o700);
+  }
+});
+
+function idToken(email: string): string {
+  return `header.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.signature`;
+}
+
+test('识别当前登录：快照一致、仅邮箱一致（有更新）、未保存和未登录', async (context) => {
+  const home = await temporaryHome(context);
+  const source = join(home, 'input.json');
+  await writeFile(source, original);
+  const store = new CredentialStore({ userHome: home, request: account });
+  assert.deepEqual(await store.current(), { status: 'none' });
+
+  await store.add(source);
+  await mkdir(join(home, '.codex'), { recursive: true });
+  await writeFile(store.codexAuthPath, original);
+  assert.deepEqual(await store.current(), { status: 'saved', email: 'person@example.com' });
+
+  await writeFile(store.codexAuthPath, JSON.stringify({ tokens: { access_token: 'refreshed', id_token: idToken('person@example.com') } }));
+  assert.deepEqual(await store.current(), { status: 'stale', email: 'person@example.com' });
+
+  await writeFile(store.codexAuthPath, JSON.stringify({ tokens: { access_token: 'other', id_token: idToken('other@example.com') } }));
+  assert.deepEqual(await store.current(), { status: 'unsaved', email: 'other@example.com' });
+
+  await writeFile(store.codexAuthPath, '{"tokens":{"access_token":"x","id_token":"not-a-jwt"}}');
+  assert.deepEqual(await store.current(), { status: 'unsaved', email: null });
+});
+
+test('快照缺失或损坏时不视为已保存，也不阻止启动', async (context) => {
+  const home = await temporaryHome(context);
+  const source = join(home, 'input.json');
+  await writeFile(source, JSON.stringify({ tokens: { access_token: 'a', id_token: idToken('person@example.com') } }));
+  const store = new CredentialStore({ userHome: home, request: account });
+  await store.add(source);
+  await mkdir(join(home, '.codex'), { recursive: true });
+  await writeFile(store.codexAuthPath, JSON.stringify({ tokens: { access_token: 'b', id_token: idToken('person@example.com') } }));
+  const snapshot = join(store.credentialsPath, 'codex-person@example.com.json');
+
+  await rm(snapshot);
+  assert.deepEqual(await store.current(), { status: 'unsaved', email: 'person@example.com' });
+  await mkdir(snapshot);
+  assert.deepEqual(await store.current(), { status: 'unsaved', email: 'person@example.com' });
+});
+
+test('路径支持去掉外层引号和反斜杠转义的空格', () => {
+  const home = join(tmpdir(), 'home');
+  assert.equal(expandPath(home, "'~/a b.json'"), join(home, 'a b.json'));
+  assert.equal(expandPath(home, ' "~/a b.json" '), join(home, 'a b.json'));
+  if (process.platform !== 'win32') {
+    assert.equal(expandPath(home, '~/a\\ b.json'), join(home, 'a b.json'));
   }
 });
