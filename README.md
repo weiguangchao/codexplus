@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="codexplus logo" width="160" />
+</p>
+
 # codexplus
 
 用交互式终端菜单保存和切换已经登录的 Codex / ChatGPT 凭证。
