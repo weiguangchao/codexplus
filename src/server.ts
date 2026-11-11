@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerOptions as SecureOptions } from 'node:https';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { recordAudit } from './audit.js';
+import { recordAudit, recordCommitted } from './audit.js';
 import { AccessStore, secretsMatch } from './access.js';
 import { isRecord, parseAuth } from './auth.js';
 import { ServiceError, parseCredential } from './protocol.js';
@@ -71,13 +71,14 @@ export async function startServer({
         throw new HttpError(400, '请输入配对码。');
       }
       const name = clientName(body.name);
+      let result: Awaited<ReturnType<AccessStore['redeem']>>;
       try {
-        const result = await access.redeem(body.code.trim(), name);
-        await recordAudit(home, '配对', result.client);
-        return result;
+        result = await access.redeem(body.code.trim(), name);
       } catch {
         throw new HttpError(400, '配对失败：配对码无效、已过期、已使用，或服务端无法保存授权。');
       }
+      await recordCommitted(home, '配对', result.client);
+      return result;
     }
     const authorization = request.headers.authorization ?? '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -96,18 +97,18 @@ export async function startServer({
         if (path === '/v1/credentials') {
           if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
           const credential = await store.add(JSON.stringify(body.auth), body.base);
-          await recordAudit(home, '上传', client, credential.email);
+          await recordCommitted(home, '上传', client, { email: credential.email });
           return { credential };
         }
         const credential = parseCredential(body);
         if (path === '/v1/credentials/delete') {
           if (typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要。');
           await store.delete(credential, body.base);
-          await recordAudit(home, '删除', client, credential.email);
+          await recordCommitted(home, '删除', client, { email: credential.email });
           return { ok: true };
         }
         const auth = parseAuth(await store.get(credential));
-        await recordAudit(home, '下载', client, credential.email);
+        await recordAudit(home, '下载', client, { email: credential.email });
         return { auth };
       } catch (error) {
         if (error instanceof ServiceError) throw error;

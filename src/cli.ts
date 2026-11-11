@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { select } from '@inquirer/prompts';
 import { readFileSync } from 'node:fs';
 import { styleText } from 'node:util';
 import { isRecord } from './auth.js';
 import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { runAdmin, runServe } from './serve.js';
-import { askPairing, isCancel, menu } from './flows.js';
+import { menu } from './flows.js';
+import { askPairing, askRepair, confirmUpload, isCancel } from './prompts.js';
 import { cancelled, line, renderTitle, report, symbols } from './ui.js';
 
 function readVersion(): string {
@@ -41,13 +41,10 @@ async function main(): Promise<void> {
   const store = await client.connect({
     ...(command.target === undefined ? {} : { target: command.target }),
     askPairing,
-    askRepair: async (message) => await select({ message, choices: [{ value: false, name: '取消' }, { value: true, name: '重新配对' }], default: false }),
+    askRepair,
     log: (message) => report(symbols.info, message),
   });
-  store.confirmUpload = async (details) => {
-    console.log(`账号：${String(details.email)}，本机刷新时间：${String(details.localRefresh ?? '未知')}，服务端刷新时间：${String(details.lastRefresh ?? '未知')}`);
-    return await select({ message: '是否用本机登录覆盖服务端？', choices: [{ value: false, name: '返回' }, { value: true, name: '用本机登录覆盖服务端' }], default: false });
-  };
+  store.confirmUpload = confirmUpload;
   try {
     await menu(store);
   } finally {

@@ -240,3 +240,12 @@ test('上传前置条件允许相同快照和匹配基线，拒绝旧快照覆�
   });
   assert.equal(JSON.parse(await store.get(credential)).tokens.access_token, 'new');
 });
+
+test('已保存的快照损坏时可以重新添加覆盖，不要求基线', async (context) => {
+  const home = await temporaryHome(context);
+  const store = new CredentialStore({ userHome: home, request: account });
+  const credential = await store.add(original, null);
+  await writeFile(join(store.credentialsPath, 'codex-person@example.com.json'), '{broken');
+  await store.add(original, null);
+  assert.equal(await store.get(credential), filtered);
+});

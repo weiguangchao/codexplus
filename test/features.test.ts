@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { AccessStore } from '../src/access.js';
@@ -55,6 +55,10 @@ test('五类成功操作写记录，失败不记，记录不含令牌或凭证',
   const entries = await readAudit(home);
   assert.deepEqual(entries.map((entry) => entry.event), ['配对', '上传', '下载', '删除', '撤销']);
   assert.equal(entries.at(-1)?.clientName, '管理命令');
+  assert.deepEqual(entries.at(-1)?.target, { id: result.client.id, name: '笔记本' });
+  const lines: string[] = [];
+  await runAdmin({ kind: 'admin', home, action: 'log', limit: 1 }, (message) => lines.push(message));
+  assert.match(lines[0]!, new RegExp(`撤销.*管理命令.*笔记本（${result.client.id}）`, 'u'));
   const content = await readFile(join(home, 'audit.log'), 'utf8');
   for (const secret of [pair.code, result.token, 'fake-secret']) assert.equal(content.includes(secret), false);
 });
@@ -65,7 +69,7 @@ test('记录保留最近一千条，log 默认和 limit 按时间顺序输出', 
   const log = (message: string) => messages.push(message);
   await runAdmin({ kind: 'admin', home, action: 'log' }, log);
   assert.match(messages[0]!, /暂无操作记录/u);
-  for (let index = 0; index < 1002; index++) await recordAudit(home, '上传', { id: 'local', name: '本机' }, `${index}@example.com`);
+  for (let index = 0; index < 1002; index++) await recordAudit(home, '上传', { id: 'local', name: '本机' }, { email: `${index}@example.com` });
   const entries = await readAudit(home, 2000);
   assert.equal(entries.length, 1000);
   assert.equal(entries[0]?.email, '2@example.com');
@@ -79,4 +83,26 @@ test('记录保留最近一千条，log 默认和 limit 按时间顺序输出', 
   assert.equal(parseCommand(['serve', 'log', '--limit', '2']).kind, 'admin');
   for (const value of ['0', '-1', '1.5', 'abc']) assert.throws(() => parseCommand(['serve', 'log', '--limit', value]));
   assert.throws(() => parseCommand(['serve', 'pair', '--limit', '2']));
+});
+
+test('记录写不进去时，已完成的配对、上传、删除和撤销照常返回，下载不交出凭证', async (context) => {
+  const home = await temporaryHome(context);
+  const server = await standalone(context, home);
+  const access = new AccessStore(home);
+  await mkdir(join(home, 'audit.log'));
+  const warnings = context.mock.method(console, 'error', () => {});
+  const pair = await access.createPair();
+  const result = await requestService(server.url, '/v1/pair', undefined, { code: pair.code, name: '笔记本' }) as { token: string; client: { id: string } };
+  assert.equal((await access.list()).length, 1);
+  const credential = { type: 'codex', email: 'person@example.com' };
+  await requestService(server.url, '/v1/credentials', result.token, { auth: { tokens: { access_token: 'fake-secret' } }, base: null });
+  await assert.rejects(requestService(server.url, '/v1/credentials/download', result.token, credential), (error) => error instanceof ServiceError && error.status === 500);
+  const store = new CredentialStore({ home });
+  await requestService(server.url, '/v1/credentials/delete', result.token, { ...credential, base: await store.digest({ type: 'codex', email: credential.email }) });
+  assert.deepEqual(await store.list(), []);
+  await runAdmin({ kind: 'admin', home, action: 'revoke', id: result.client.id }, () => {});
+  assert.deepEqual(await access.list(), []);
+  assert.equal(warnings.mock.callCount(), 4);
+  for (const call of warnings.mock.calls) assert.equal(String(call.arguments[0]).includes('fake-secret'), false);
+  await rm(join(home, 'audit.log'), { recursive: true });
 });

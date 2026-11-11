@@ -19,7 +19,7 @@ test('废弃本机和管理接口不创建任何文件', async (context) => {
   assert.deepEqual(await readdir(home), before);
 });
 
-test('管理命令输出配对码、客户端列表和撤销结果，服务端未运行时报错', async (context) => {
+test('管理命令输出配对码、客户端列表和撤销结果，服务端未运行时也可用', async (context) => {
   const home = await temporaryHome(context);
   const server = await standalone(context, home);
   const logs: string[] = [];
@@ -154,11 +154,10 @@ test('拒绝跨站请求、无效请求、过大内容和路径穿越，错误�
   await assert.rejects(requestService(server.url, '/v1/credentials/download', token, { type: 'codex', email: '../a@example.com' }), /邮箱无效/u);
 });
 
-test('远程明文连接和带密码或路径的地址被拒绝，管理命令只能连本机地址', () => {
+test('远程明文连接和带密码或路径的地址被拒绝，回环地址允许明文', () => {
   assert.equal(serverUrl('https://server.example/'), 'https://server.example');
-  assert.equal(serverUrl('http://127.0.0.1:47831', true), 'http://127.0.0.1:47831');
+  assert.equal(serverUrl('http://127.0.0.1:47831'), 'http://127.0.0.1:47831');
   for (const url of ['http://192.168.1.5:47831', 'https://user:secret@server.example', 'https://server.example/path', 'file:///tmp/file', 'https://server.example/?token=secret']) {
     assert.throws(() => serverUrl(url), /地址|HTTPS/u);
   }
-  assert.throws(() => serverUrl('https://192.168.1.5', true), /仅限本机/u);
 });

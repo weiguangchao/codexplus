@@ -33,14 +33,14 @@ test('拒绝缺少或为空的 HOME 路径、未知选项和位置参数', () =>
   }
 });
 
-test('客户端默认使用已记住的服务端，--local / --port 指向本机，--server 指定远程服务端', () => {
+test('客户端默认使用已记住的服务端，--local 指向本机，--server 指定远程服务端，不接受 --port', () => {
   assert.deepEqual(parseCommand([]), { kind: 'client', home: join(homedir(), '.codexplus') });
   assert.deepEqual(parseCommand(['--local']), { kind: 'client', home: join(homedir(), '.codexplus'), target: 'local' });
   assert.throws(() => parseCommand(['--port', '5000']), /不能用于此命令/u);
   assert.deepEqual(parseCommand(['--server', 'https://vault.example/']), { kind: 'client', home: join(homedir(), '.codexplus'), target: 'https://vault.example' });
 });
 
-test('serve 启动服务端，默认固定端口，管理命令默认连接本机端口', () => {
+test('serve 启动服务端，默认固定端口，管理命令只接受 --home', () => {
   const home = join(homedir(), '.codexplus');
   assert.deepEqual(parseCommand(['serve']), { kind: 'serve', home, host: '127.0.0.1', port: 47831 });
   assert.deepEqual(parseCommand(['serve', '--host', '0.0.0.0', '--port', '8443', '--tls-cert', 'c.pem', '--tls-key', 'k.pem']),

@@ -77,7 +77,7 @@ export class AccessStore {
   async redeem(code: string, name: string) { return await withLock(this.home, () => this.redeemUnlocked(code, name)); }
   async addClient(name: string) { return await withLock(this.home, () => this.addClientUnlocked(name)); }
   async list(): Promise<PairedClient[]> { return await withLock(this.home, () => this.listUnlocked()); }
-  async revoke(id: string): Promise<void> { return await withLock(this.home, () => this.revokeUnlocked(id)); }
+  async revoke(id: string): Promise<PairedClient> { return await withLock(this.home, () => this.revokeUnlocked(id)); }
 
   private async checkUnlocked(): Promise<void> {
     await this.read();
@@ -121,11 +121,13 @@ export class AccessStore {
     return (await this.read()).clients.map(({ id, name, createdAt, lastSeenAt }) => ({ id, name, createdAt, ...(lastSeenAt ? { lastSeenAt } : {}) }));
   }
 
-  private async revokeUnlocked(id: string): Promise<void> {
+  private async revokeUnlocked(id: string): Promise<PairedClient> {
     const state = await this.read();
-    if (!state.clients.some((client) => client.id === id)) {
+    const revoked = state.clients.find((client) => client.id === id);
+    if (!revoked) {
       throw new Error('未找到该客户端。');
     }
     await this.save({ ...state, clients: state.clients.filter((client) => client.id !== id) });
+    return { id: revoked.id, name: revoked.name, createdAt: revoked.createdAt };
   }
 }

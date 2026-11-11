@@ -9,12 +9,17 @@ export interface AuditEntry {
   clientId: string;
   clientName: string;
   email?: string;
+  target?: { id: string; name: string };
 }
 
-export async function recordAudit(home: string, event: AuditEntry['event'], client: { id: string; name: string }, email?: string): Promise<void> {
+type Actor = { id: string; name: string };
+
+export async function recordAudit(home: string, event: AuditEntry['event'], client: Actor, subject: { email?: string; target?: Actor } = {}): Promise<void> {
   await withLock(home, async () => {
     const path = join(home, 'audit.log');
-    const entry: AuditEntry = { time: new Date().toISOString(), event, clientId: client.id, clientName: client.name, ...(email ? { email } : {}) };
+    const entry: AuditEntry = { time: new Date().toISOString(), event, clientId: client.id, clientName: client.name,
+      ...(subject.email ? { email: subject.email } : {}),
+      ...(subject.target ? { target: { id: subject.target.id, name: subject.target.name } } : {}) };
     await appendFile(path, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
     const lines = (await readOptional(path))!.trim().split('\n');
     if (lines.length > 1000) await writeAtomic(path, `${lines.slice(-1000).join('\n')}\n`);
@@ -28,4 +33,12 @@ export async function readAudit(home: string, limit = 50): Promise<AuditEntry[]>
     try { return content.trim().split('\n').slice(-limit).map((line) => JSON.parse(line) as AuditEntry); }
     catch { throw new Error('操作记录格式无效。'); }
   });
+}
+
+export async function recordCommitted(...args: Parameters<typeof recordAudit>): Promise<void> {
+  try {
+    await recordAudit(...args);
+  } catch {
+    console.error(`操作已完成，但未能写入操作记录（${args[1]}），请检查服务端目录的文件权限和磁盘空间。`);
+  }
 }

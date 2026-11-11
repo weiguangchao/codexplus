@@ -87,9 +87,10 @@ export class CredentialStore {
       const previous = await readOptional(destination);
 
       if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
-        const digest = authDigest(previous);
-        if (digest === authDigest(content)) return credential;
-        if (digest !== base) throw conflict(email, previous);
+        let digest: string | null;
+        try { digest = authDigest(previous); } catch { digest = null; }
+        if (digest !== null && digest === authDigest(content)) return credential;
+        if (digest !== null && digest !== base) throw conflict(email, previous);
       }
       await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
       try {

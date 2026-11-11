@@ -57,7 +57,10 @@ export function describeCurrent(current: CurrentLogin): string {
   if (current.status === 'saved') {
     return `${dot('green')} ${styleText('bold', current.email)}`;
   }
-  if (current.status === 'behind' || current.status === 'diverged') return `${dot('yellow')} ${current.email} ${current.status === 'behind' ? '服务端有更新版本' : '与服务端版本不一致'}`;
+  if (current.status === 'behind' || current.status === 'diverged') {
+    const note = current.status === 'behind' ? '服务端有更新版本' : '与服务端版本不一致';
+    return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', note)}`;
+  }
   if (current.status === 'ahead') {
     return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '有更新未保存')}`;
   }
@@ -96,8 +99,13 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
       ? '当前 Codex 登录尚未保存，建议先保存。'
       : current.status === 'ahead'
         ? '当前登录有更新，可以重新保存以更新凭证。'
-        : '保存一个 auth.json，同一邮箱会覆盖之前保存的凭证';
+        : current.status === 'diverged'
+          ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
+          : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
+    ...(current.status === 'behind'
+      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ~/.codex/auth.json` }]
+      : []),
     {
       value: 'switch' as const,
       name: '切换账号',
@@ -105,8 +113,12 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
       disabled: others === 0 ? styleText('dim', credentials.length === 0 ? '(暂无账号)' : '(没有其他账号)') : false,
     },
     { value: 'add' as const, name: '添加账号', description: addDescription },
-    { value: 'delete' as const, name: '删除账号', disabled: credentials.length === 0 ? '暂无账号' : false },
-    ...(current.status === 'behind' ? [{ value: 'update' as const, name: '更新本机登录' }] : []),
+    {
+      value: 'delete' as const,
+      name: '删除账号',
+      description: '从服务端删除一个已保存的账号，本机登录不受影响',
+      disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
+    },
     divider(),
     { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
   ];

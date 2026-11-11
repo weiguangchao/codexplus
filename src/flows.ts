@@ -1,12 +1,12 @@
-import { input, password, select } from '@inquirer/prompts';
+import { input, select } from '@inquirer/prompts';
 import { readFile, stat } from 'node:fs/promises';
-import { hostname } from 'node:os';
 import { isAbsolute, relative, sep } from 'node:path';
-import { emitKeypressEvents } from 'node:readline';
 import { styleText } from 'node:util';
 import { isRecord, parseAuth } from './auth.js';
+import { UploadCancelled } from './client.js';
 import type { Session } from './client.js';
 import { expandPath } from './files.js';
+import { BACK, escapable, isCancel } from './prompts.js';
 import { ServiceError } from './protocol.js';
 import type { Credential, CurrentLogin } from './protocol.js';
 import { confirmRunningCodex } from './switch.js';
@@ -26,38 +26,6 @@ import {
   withSpinner,
 } from './ui.js';
 import type { AddSource } from './ui.js';
-
-const BACK = Symbol('back');
-
-interface PromptContext {
-  signal: AbortSignal;
-  clearPromptOnDone: boolean;
-}
-
-async function escapable<T>(run: (context: PromptContext) => Promise<T>): Promise<T | typeof BACK> {
-  const controller = new AbortController();
-  const onKeypress = (_: string, key?: { name?: string }) => {
-    if (key?.name === 'escape') {
-      controller.abort();
-    }
-  };
-  emitKeypressEvents(process.stdin);
-  process.stdin.on('keypress', onKeypress);
-  try {
-    return await run({ signal: controller.signal, clearPromptOnDone: true });
-  } catch (error) {
-    if (controller.signal.aborted && error instanceof Error && error.name === 'AbortPromptError') {
-      return BACK;
-    }
-    throw error;
-  } finally {
-    process.stdin.off('keypress', onKeypress);
-  }
-}
-
-export function isCancel(error: unknown): boolean {
-  return error instanceof Error && (error.name === 'ExitPromptError' || error.name === 'AbortPromptError');
-}
 
 function tildify(store: Session, path: string): string {
   const inside = relative(store.userHome, path);
@@ -113,6 +81,10 @@ async function trySave(store: Session, credentials: Credential[], path: string, 
     if (isCancel(error)) {
       throw error;
     }
+    if (error instanceof UploadCancelled) {
+      report(symbols.info, error.message);
+      return null;
+    }
     const message = describeError(store, error);
     const shown = tildify(store, expandPath(store.userHome, path));
     report(symbols.failure, styleText('red', `保存失败：${message}`), message.includes(shown) ? undefined : shown);
@@ -156,16 +128,23 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
         source = 'file';
         continue;
       }
-      if (latest.status === 'behind') { report(symbols.info, '服务端版本更新，无需保存。'); return; }
+      if (latest.status === 'behind') {
+        report(symbols.info, `服务端保存的 ${styleText('bold', latest.email)} 版本更新，无需保存`, '可在主菜单选择「更新本机登录」');
+        return;
+      }
       if (latest.status === 'saved') {
         report(symbols.info, `${styleText('bold', latest.email)} 已是最新，无需更新`, '~/.codex/auth.json 与已保存的凭证一致');
         return;
       }
       if (latest.status === 'diverged') {
-        const decision = await resolveDivergence(store, latest.email);
-        if (decision !== 'upload') return;
-        if (await trySave(store, credentials, store.codexAuthPath, store.snapshotDigest(latest.email))) return;
-        continue;
+        const decision = await resolveDivergence(store, latest.email, false);
+        if (decision === 'back') {
+          continue;
+        }
+        if (decision === 'local' && !await trySave(store, credentials, store.codexAuthPath, store.snapshotDigest(latest.email))) {
+          continue;
+        }
+        return;
       }
       if (await trySave(store, credentials, store.codexAuthPath)) {
         return;
@@ -207,22 +186,38 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead'
   );
 }
 
-async function resolveDivergence(store: Session, email: string): Promise<'upload' | 'download' | 'back'> {
+async function downloadCurrent(store: Session, email: string): Promise<boolean> {
+  if (!(await confirmRunningCodex({ ask: askRunningCodex, log: logRunningCodex }))) {
+    console.log('');
+    return false;
+  }
+  await store.switch({ type: 'codex', email });
+  console.log(line(symbols.success, `已用服务端版本更新本机登录 ${styleText('bold', email)}`));
+  report(' ', styleText('dim', '请重新启动正在运行的 Codex 会话以使用更新后的凭证。'));
+  return true;
+}
+
+async function resolveDivergence(store: Session, email: string, switching: boolean): Promise<'local' | 'server' | 'back'> {
   const refreshTimes = await store.refreshTimes(email);
   const decision = await escapable((context) => select({
-    message: `${email} 与服务端版本不一致\n  ${refreshTimes}`,
-    choices: [{ value: 'upload' as const, name: '用本机登录覆盖服务端' }, { value: 'download' as const, name: '用服务端版本覆盖本机' }, { value: 'back' as const, name: '返回' }],
+    message: `${styleText('bold', email)} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshTimes)}`,
+    choices: [
+      { value: 'local' as const, name: switching ? '先用本机登录覆盖服务端，再切换' : '用本机登录覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
+      switching
+        ? { value: 'server' as const, name: '不保存，直接切换', description: '本机登录将被覆盖，服务端保存的版本不变' }
+        : { value: 'server' as const, name: '用服务端版本覆盖本机', description: '下载服务端保存的版本并写入 ~/.codex/auth.json' },
+      { value: 'back' as const, name: '返回', description: switching ? '重新选择账号' : '不做更改' },
+    ],
     default: 'back',
     theme: selectTheme('返回'),
   }, context));
-  if (decision === 'download') {
-    if (await confirmRunningCodex({ ask: askRunningCodex, log: logRunningCodex })) {
-      await store.switch({ type: 'codex', email });
-      return 'download';
-    }
+  if (decision === BACK || decision === 'back') {
     return 'back';
   }
-  return decision === 'upload' ? 'upload' : 'back';
+  if (decision === 'server' && !switching) {
+    return await downloadCurrent(store, email) ? 'server' : 'back';
+  }
+  return decision;
 }
 
 async function backupBeforeSwitch(store: Session, credentials: Credential[], target: Credential) {
@@ -231,10 +226,19 @@ async function backupBeforeSwitch(store: Session, credentials: Credential[], tar
     return 'switch' as const;
   }
   if (current.status === 'diverged') {
-    const decision = await resolveDivergence(store, current.email);
-    if (decision === 'back') return 'back' as const;
-    if (decision === 'download') return 'switch' as const;
-    return await trySave(store, credentials, store.codexAuthPath, store.snapshotDigest(current.email)) ? 'switch' as const : 'back' as const;
+    const decision = await resolveDivergence(store, current.email, true);
+    if (decision === 'back') {
+      return 'back' as const;
+    }
+    if (decision === 'server') {
+      return 'switch' as const;
+    }
+    const saved = await trySave(store, credentials, store.codexAuthPath, store.snapshotDigest(current.email));
+    if (saved?.email === target.email) {
+      report(symbols.info, `${saved.email} 就是当前登录的账号，无需切换。`);
+      return 'done' as const;
+    }
+    return saved ? 'switch' as const : 'back' as const;
   }
   for (;;) {
     const decision = await confirmOverwrite(current, target);
@@ -322,14 +326,42 @@ async function switchFlow(store: Session, credentials: Credential[], current: Cu
   }
 }
 
-export async function askPairing(url: string) {
-  report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus serve pair 获取配对码');
-  const code = await password({ message: '服务端生成的配对码', mask: true, theme: inputTheme,
-    validate: (value) => Boolean(value.trim()) || '请输入配对码。' });
-  const name = await input({ message: '客户端名称', default: hostname(), theme: inputTheme,
-    validate: (value) => (Boolean(value.trim()) && value.length <= 100) || '请输入名称，最多 100 字符。' });
-  console.log('');
-  return { code, name };
+async function deleteFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<void> {
+  const selected = await escapable((context) => select({
+    message: '删除哪个账号？',
+    choices: [
+      ...credentials.map((credential) => ({ value: credential as Credential | null, name: credential.email })),
+      { value: null, name: '返回', description: '回到主菜单' },
+    ],
+    default: null,
+    theme: selectTheme('返回'),
+    pageSize: 10,
+  }, context));
+  if (selected === BACK || selected === null) {
+    return;
+  }
+  const active = current.status !== 'none' && current.email === selected.email;
+  const confirmed = await escapable((context) => select({
+    message: `确认从服务端删除 ${styleText('cyan', selected.email)}？\n  ${styleText('yellow', '删除后无法恢复。')}${active ? styleText('dim', ' 本机 ~/.codex/auth.json 不受影响。') : ''}`,
+    choices: [
+      { value: false, name: '取消', description: '保留该账号' },
+      { value: true, name: '删除', description: '从服务端移除该账号保存的凭证' },
+    ],
+    default: false,
+    theme: selectTheme('取消'),
+  }, context));
+  if (confirmed !== true) {
+    return;
+  }
+  try {
+    await store.delete(selected);
+    report(symbols.success, `已删除 ${styleText('bold', selected.email)}`);
+  } catch (error) {
+    if (!(error instanceof ServiceError) || error.status !== 409) {
+      throw error;
+    }
+    report(symbols.warning, styleText('yellow', `${selected.email} 在服务端已被更新，未删除。`), '列表已刷新，请重新决定');
+  }
 }
 
 export async function menu(store: Session): Promise<void> {
@@ -356,18 +388,11 @@ export async function menu(store: Session): Promise<void> {
 
     try {
       if (action === 'delete') {
-        const selected = await escapable((context) => select({ message: '删除哪个账号？', choices: [...credentials.map((value) => ({ value, name: value.email })), { value: null, name: '返回' }] }, context));
-        if (selected && selected !== BACK) {
-          const confirmed = await escapable((context) => select({ message: `确认删除 ${selected.email}？${current.status !== 'none' && current.email === selected.email ? '本机 ~/.codex/auth.json 不受影响。' : ''}`, choices: [{ value: false, name: '取消' }, { value: true, name: '删除' }], default: false }, context));
-          if (confirmed === true) {
-            try { await store.delete(selected); report(symbols.success, '已删除账号。'); } catch (error) {
-              if (error instanceof ServiceError && error.status === 409) report(symbols.warning, '该账号在服务端已被更新，请刷新列表后重新决定。');
-              else throw error;
-            }
-          }
+        await deleteFlow(store, credentials, current);
+      } else if (action === 'update') {
+        if (current.status === 'behind') {
+          await downloadCurrent(store, current.email);
         }
-      } else if (action === 'update' && current.status !== 'none' && current.email) {
-        if (await confirmRunningCodex({ ask: askRunningCodex, log: logRunningCodex })) await store.switch({ type: 'codex', email: current.email });
       } else if (action === 'switch') {
         if (await switchFlow(store, credentials, current)) {
           return;
@@ -383,4 +408,3 @@ export async function menu(store: Session): Promise<void> {
     }
   }
 }
-

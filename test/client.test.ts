@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { UploadCancelled } from '../src/client.js';
 import { admin, filtered, makeClient, original, pairCode, standalone, temporaryHome } from './helpers.js';
 
 function never(): Promise<never> { return Promise.reject(new Error('不应请求配对码。')); }
@@ -137,7 +138,7 @@ function idToken(email: string): string {
   return `header.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.signature`;
 }
 
-test('识别当前登录：与服务端快照一致、仅邮箱一致（有更新）、未保存和未登录，不下载凭证', async (context) => {
+test('识别当前登录：与服务端快照一致、仅邮箱一致且没有基线（不一致）、未保存和未登录，不下载凭证', async (context) => {
   const userHome = await temporaryHome(context);
   const { client } = makeClient(context, userHome);
   const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
@@ -151,6 +152,8 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致（有更�
   assert.deepEqual(await session.current(), { status: 'saved', email: 'person@example.com' });
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'refreshed', id_token: idToken('person@example.com') } }));
   assert.deepEqual(await session.current(), { status: 'diverged', email: 'person@example.com' });
+  await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { id_token: idToken('person@example.com') } }));
+  assert.deepEqual(await session.current(), { status: 'diverged', email: 'person@example.com' });
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'other', id_token: idToken('other@example.com') } }));
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'other@example.com' });
   await writeFile(session.codexAuthPath, '{"tokens":{"access_token":"x","id_token":"not-a-jwt"}}');
@@ -163,7 +166,7 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致（有更�
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'person@example.com' });
 });
 
-test('其他客户端更新同一账号后，当前登录状态立即变为有更新未保存', async (context) => {
+test('其他客户端更新同一账号后，当前登录状态立即变为服务端有更新版本', async (context) => {
   const userHome = await temporaryHome(context);
   const server = await standalone(context, join(userHome, '.codexplus'));
   const { client } = makeClient(context, userHome);
@@ -259,7 +262,7 @@ test('基线区分本机领先、服务端领先和分歧，旧快照必须确�
   assert.equal(confirmations, 1);
   assert.equal((await session.current()).status, 'behind');
   session.confirmUpload = async () => false;
-  await assert.rejects(session.add(session.codexAuthPath), /版本已更新/u);
+  await assert.rejects(session.add(session.codexAuthPath), UploadCancelled);
   await session.switch(credential);
   assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'v3');
   await client.setBaseline(null);

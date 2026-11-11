@@ -29,7 +29,7 @@ export interface Pairing {
 
 export interface ConnectOptions {
   target?: string;
-  askRepair?: (message: string) => Promise<boolean>;
+  askRepair?: (url: string) => Promise<boolean>;
   askPairing?: (url: string) => Promise<Pairing>;
   log?: (message: string) => void;
 }
@@ -52,6 +52,12 @@ function parsePairResult(result: unknown): ServerEntry {
     throw new Error('服务端配对响应格式无效，未保存客户端配置。');
   }
   return { token: result.token, clientId: result.client.id };
+}
+
+export class UploadCancelled extends Error {
+  constructor() {
+    super('已取消，服务端保存的版本未更改。');
+  }
 }
 
 export class Session {
@@ -112,8 +118,13 @@ export class Session {
     const email = idTokenEmail(content);
     const baseline = (await this.owner?.config())?.baseline;
     const base = baseline?.server === this.server && baseline.email === email ? baseline.digest : null;
-    return email !== null && saved.some((credential) => credential.email === email && this.digests.has(email))
-      ? { status: this.digests.get(email) === base ? 'ahead' : login === base ? 'behind' : 'diverged', email } : { status: 'unsaved', email };
+    if (email === null || !saved.some((credential) => credential.email === email && this.digests.has(email))) {
+      return { status: 'unsaved', email };
+    }
+    if (base === null) {
+      return { status: 'diverged', email };
+    }
+    return { status: this.digests.get(email) === base ? 'ahead' : login === base ? 'behind' : 'diverged', email };
   }
 
   snapshotDigest(email: string): string | null { return this.digests.get(email) ?? null; }
@@ -135,8 +146,10 @@ export class Session {
     let result: unknown;
     for (;;) {
       try { result = await upload(() => this.request('/v1/credentials', { auth, base })); break; } catch (error) {
-        if (!(error instanceof ServiceError) || error.status !== 409 || error.details.code !== 'conflict' ||
-          !await this.confirmUpload?.({ ...error.details, localRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null })) throw error;
+        if (!(error instanceof ServiceError) || error.status !== 409 || error.details.code !== 'conflict' || !this.confirmUpload) throw error;
+        if (!await this.confirmUpload({ ...error.details, localRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null })) {
+          throw new UploadCancelled();
+        }
         base = String(error.details.digest);
       }
     }
@@ -269,8 +282,9 @@ export class CredentialClient {
     let replaced = false;
     let entry = config.servers[url];
     if (entry?.serverId && entry.serverId !== id) {
-      const message = '该地址上的服务端不是之前配对的那个';
-      if (!await askRepair?.(`${message}，是否重新配对？`)) throw new Error(message);
+      if (!await askRepair?.(url)) {
+        throw new Error(`${url} 上的服务端不是之前配对的那个，未发送已保存的令牌，客户端配置未更改。`);
+      }
       entry = undefined;
       replaced = true;
     }

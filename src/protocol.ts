@@ -1,7 +1,6 @@
 import { authDigest, parseAuth, credentialFilename, isRecord } from './auth.js';
 
 export const defaultPort = 47831;
-export const defaultServerUrl = localUrl(defaultPort);
 
 export interface Credential {
   type: 'codex';
@@ -30,10 +29,6 @@ export function parseCredential(value: unknown): Credential {
   return { type: 'codex', email: value.email };
 }
 
-export function localUrl(port: number): string {
-  return `http://127.0.0.1:${port}`;
-}
-
 export function isLoopbackHost(host: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(host);
 }
@@ -42,7 +37,7 @@ export function isLoopbackUrl(url: string): boolean {
   return isLoopbackHost(new URL(url).hostname);
 }
 
-export function serverUrl(value: string, local = false): string {
+export function serverUrl(value: string): string {
   let url: URL;
   try {
     url = new URL(value.trim());
@@ -51,9 +46,6 @@ export function serverUrl(value: string, local = false): string {
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error('服务端地址必须是 HTTP(S) 根地址，不能包含密码、路径或查询参数。');
-  }
-  if (local && !isLoopbackHost(url.hostname)) {
-    throw new Error('服务端管理命令仅限本机回环地址。');
   }
   if (url.protocol !== 'https:' && !isLoopbackHost(url.hostname)) {
     throw new Error('远程服务端必须使用 HTTPS，以保护配对码和账户凭证。');
