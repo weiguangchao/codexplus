@@ -32,7 +32,6 @@ async function reclaim(path: string): Promise<void> {
     await (await open(guard, 'wx', 0o600)).close();
   } catch (error) {
     if (!busy(error)) throw error;
-    if (await age(guard, null) > 30_000) await rm(guard, { force: true });
     return;
   }
   try {
@@ -61,7 +60,12 @@ async function acquire(home: string): Promise<() => Promise<void>> {
     } catch (error) {
       if (!isRecord(error) || !['ENOENT', 'EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))) throw error;
     }
-    if (Date.now() - started >= 10_000) throw new Error('数据目录正被其他 codexplus 进程占用。');
+    if (Date.now() - started >= 10_000) {
+      const guard = `${path}.reclaim`;
+      throw new Error(await readOptional(guard).catch(() => '') === null
+        ? '数据目录正被其他 codexplus 进程占用。'
+        : `数据目录的锁无法回收：上次回收被中断，留下了 ${guard}。请确认没有其他 codexplus 在运行后删除该文件。`);
+    }
     await setTimeout(5 + Math.floor(Math.random() * 21));
   }
 }
