@@ -66,7 +66,7 @@ codexplus serve --host 0.0.0.0 --port 47831 --tls-cert /path/to/cert.pem --tls-k
 codexplus serve pair
 ```
 
-管理命令直接在目录锁内读写授权文件，服务端没有运行也可用；仅接受 `--home`，不接受 `--port`、`--server`。TLS 证书必须受 Node.js 信任并匹配主机名；私有 CA 可通过 NODE_EXTRA_CA_CERTS 指定。
+四个管理命令（pair、clients、revoke、log）要求数据目录已存在且是目录，否则报错并显示解析后的路径，提示检查 `--home` 或先运行 `codexplus serve`，不会创建目录。已有空目录仍可使用管理命令。启动服务端和客户端仍会自动创建所需目录。管理命令直接在目录锁内读写授权文件，服务端没有运行也可用；仅接受 `--home`，不接受 `--port`、`--server`。TLS 证书必须受 Node.js 信任并匹配主机名；私有 CA 可通过 NODE_EXTRA_CA_CERTS 指定。
 
 配对码有效期为五分钟，只能使用一次，生成新码会使旧码失效。客户端运行：
 

@@ -1,5 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { resolve } from 'node:path';
 import { readAudit, recordCommitted } from './audit.js';
 import { AccessStore } from './access.js';
 import { expandPath } from './files.js';
@@ -22,6 +23,11 @@ export async function runServe(command: Extract<Command, { kind: 'serve' }>): Pr
 }
 
 export async function runAdmin(command: Extract<Command, { kind: 'admin' }>, log: (message: string) => void = console.log): Promise<void> {
+  const home = resolve(command.home);
+  const directory = await stat(home).catch(() => null);
+  if (!directory?.isDirectory()) {
+    throw new Error(`数据目录不存在或不是目录：${home}，请检查 --home 或先运行 codexplus serve。`);
+  }
   const access = new AccessStore(command.home);
   if (command.action === 'log') {
     const entries = await readAudit(command.home, command.limit ?? 50);
