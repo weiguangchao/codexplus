@@ -3,18 +3,18 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { defaultPort, serverUrl } from './protocol.js';
 
-export type AdminAction = 'pair' | 'clients' | 'revoke';
+export type AdminAction = 'pair' | 'clients' | 'revoke' | 'log';
 
 export type Command =
   | { kind: 'help' }
   | { kind: 'client'; home: string; target?: string }
   | { kind: 'serve'; home: string; host: string; port: number; tlsCert?: string; tlsKey?: string }
-  | { kind: 'admin'; home: string; action: AdminAction; id?: string };
+  | { kind: 'admin'; home: string; action: AdminAction; id?: string; limit?: number };
 
 export const usage = [
   'codexplus [--server 地址 | --local] [--home 目录]',
   'codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]',
-  'codexplus serve pair|clients|revoke <客户端ID> [--home 目录]',
+  'codexplus serve pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]',
 ].join('\n');
 
 function resolveHome(value: string | undefined): string {
@@ -39,6 +39,7 @@ export function parseCommand(args: string[]): Command {
     allowPositionals: true,
     options: {
       home: { type: 'string' },
+      limit: { type: 'string' },
       port: { type: 'string' },
       host: { type: 'string' },
       server: { type: 'string' },
@@ -81,9 +82,11 @@ export function parseCommand(args: string[]): Command {
     return { kind: 'serve', home, host: values.host ?? '127.0.0.1', port: port ?? defaultPort,
       ...(tlsCert && tlsKey ? { tlsCert, tlsKey } : {}) };
   }
-  if (!['pair', 'clients', 'revoke'].includes(action) || rest.length > 0 || (action === 'revoke') !== (id !== undefined)) {
+  if (!['pair', 'clients', 'revoke', 'log'].includes(action) || rest.length > 0 || (action === 'revoke') !== (id !== undefined)) {
     throw new Error('命令无效，请运行 codexplus --help。');
   }
-  allow('home');
-  return { kind: 'admin', home, action: action as AdminAction, ...(id === undefined ? {} : { id }) };
+  allow('home', ...(action === 'log' ? ['limit'] : []));
+  const limit = values.limit === undefined ? undefined : Number(values.limit);
+  if (limit !== undefined && (!/^\d+$/u.test(values.limit!) || !Number.isSafeInteger(limit) || limit < 1)) throw new Error('--limit 必须为正整数。');
+  return { kind: 'admin', home, action: action as AdminAction, ...(id === undefined ? {} : { id }), ...(limit === undefined ? {} : { limit }) };
 }

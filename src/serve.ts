@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
+import { readAudit, recordAudit } from './audit.js';
 import { AccessStore } from './access.js';
 import { expandPath } from './files.js';
 import type { Command } from './options.js';
@@ -22,15 +23,20 @@ export async function runServe(command: Extract<Command, { kind: 'serve' }>): Pr
 
 export async function runAdmin(command: Extract<Command, { kind: 'admin' }>, log: (message: string) => void = console.log): Promise<void> {
   const access = new AccessStore(command.home);
-  if (command.action === 'pair') {
+  if (command.action === 'log') {
+    const entries = await readAudit(command.home, command.limit ?? 50);
+    if (entries.length === 0) log('暂无操作记录。');
+    for (const entry of entries) log(`${entry.time}  ${entry.event}  ${entry.clientId}  ${entry.clientName}${entry.email ? `  ${entry.email}` : ''}`);
+  } else if (command.action === 'pair') {
     const result = await access.createPair();
     log(`配对码：${result.code}\n有效期至：${result.expiresAt}\n仅可使用一次；生成新码会替换旧码。请在客户端运行 codexplus --server <服务端地址>。`);
   } else if (command.action === 'clients') {
     const clients = await access.list();
     if (clients.length === 0) log('暂无已配对客户端。');
-    for (const client of clients) log(`${client.id}  ${client.name}  ${client.createdAt}`);
+    for (const client of clients) log(`${client.id}  ${client.name}  ${client.createdAt}  ${client.lastSeenAt ?? '从未'}`);
   } else {
     await access.revoke(command.id ?? '');
+    await recordAudit(command.home, '撤销', { id: 'admin', name: '管理命令' });
     log('已撤销该客户端的服务端访问授权。');
   }
 }

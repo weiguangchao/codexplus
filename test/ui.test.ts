@@ -69,3 +69,13 @@ test('结果行过宽时把路径放到下一行', () => {
   assert.equal(plain(line('x', 'ok', '~/a.json')), 'x ok  ~/a.json');
   assert.equal(plain(line('x', '错'.repeat(columns), '~/a.json')), `x ${'错'.repeat(columns)}\n  ~/a.json`);
 });
+
+test('服务端更新默认下载，删除菜单随账号列表启用', () => {
+  assert.equal(mainChoices([alice], { status: 'behind', email: alice.email }).default, 'update');
+  for (const status of ['behind', 'diverged'] as const) assert.match(plain(renderStatus({ status, email: alice.email }, 1)), status === 'behind' ? /服务端有更新版本/u : /与服务端版本不一致/u);
+  const findDelete = (credentials: typeof alice[]) => mainChoices(credentials, { status: 'none' }).choices.find((choice) => !(choice instanceof Separator) && choice.value === 'delete');
+  const empty = findDelete([]);
+  const filled = findDelete([alice]);
+  assert.ok(empty && !(empty instanceof Separator) && empty.disabled);
+  assert.ok(filled && !(filled instanceof Separator) && !filled.disabled);
+});

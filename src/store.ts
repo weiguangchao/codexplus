@@ -45,6 +45,29 @@ export class CredentialStore {
     }
   }
 
+  async snapshots(): Promise<(Credential & { digest: string | null; lastRefresh: string | null })[]> {
+    return await withLock(this.home, async () => await Promise.all((await this.listUnlocked()).map(async (credential) => {
+      try {
+        const content = await this.getUnlocked(credential);
+        const value = parseAuth(content).last_refresh;
+        return { ...credential, digest: authDigest(content), lastRefresh: typeof value === 'string' ? value : null };
+      } catch { return { ...credential, digest: null, lastRefresh: null }; }
+    })));
+  }
+
+  async delete(credential: Credential, base: string): Promise<void> {
+    await withLock(this.home, async () => {
+      const selected = parseCredential(credential);
+      const config = await this.readConfig();
+      if (!config.credentials.some((entry) => entry.email === selected.email)) throw new Error('未找到所选凭证。');
+      const path = join(this.credentialsPath, credentialFilename(selected.email));
+      const content = await readFile(path, 'utf8');
+      if (authDigest(content) !== base) throw conflict(selected.email, content);
+      await writeAtomic(this.configPath, `${JSON.stringify({ ...config, credentials: config.credentials.filter((entry) => entry.email !== selected.email) }, null, 2)}\n`);
+      await rm(path, { force: true });
+    });
+  }
+
   async list(): Promise<Credential[]> { return await withLock(this.home, () => this.listUnlocked()); }
   async get(credential: Credential): Promise<string> { return await withLock(this.home, () => this.getUnlocked(credential)); }
   async digest(credential: Credential): Promise<string | null> { return await withLock(this.home, () => this.digestUnlocked(credential)); }
@@ -58,31 +81,31 @@ export class CredentialStore {
     const auth = parseAuth(content);
     const { email } = await lookupAccount(auth.tokens, this.request);
     return await withLock(this.home, async () => {
-    const config = await this.readConfig();
-    const credential: Credential = { type: 'codex', email };
-    const destination = join(this.credentialsPath, credentialFilename(email));
-    const previous = await readOptional(destination);
+      const config = await this.readConfig();
+      const credential: Credential = { type: 'codex', email };
+      const destination = join(this.credentialsPath, credentialFilename(email));
+      const previous = await readOptional(destination);
 
-    if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
-      const digest = authDigest(previous);
-      if (digest === authDigest(content)) return credential;
-      if (digest !== base) throw conflict(email, previous);
-    }
-    await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
-    try {
-      const credentials = config.credentials.filter((entry) => entry.email !== email);
-      credentials.push(credential);
-      await writeAtomic(this.configPath, `${JSON.stringify({ version: 1, credentials }, null, 2)}\n`);
-    } catch (error) {
-      if (previous === null) {
-        await rm(destination, { force: true });
-      } else {
-        await writeAtomic(destination, previous);
+      if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
+        const digest = authDigest(previous);
+        if (digest === authDigest(content)) return credential;
+        if (digest !== base) throw conflict(email, previous);
       }
-      throw error;
-    }
+      await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
+      try {
+        const credentials = config.credentials.filter((entry) => entry.email !== email);
+        credentials.push(credential);
+        await writeAtomic(this.configPath, `${JSON.stringify({ version: 1, credentials }, null, 2)}\n`);
+      } catch (error) {
+        if (previous === null) {
+          await rm(destination, { force: true });
+        } else {
+          await writeAtomic(destination, previous);
+        }
+        throw error;
+      }
 
-    return credential;
+      return credential;
     });
   }
 

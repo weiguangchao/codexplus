@@ -79,7 +79,7 @@ test('过期配对码无效，服务端不保存明文配对码和客户端令�
   const content = await readFile(access.path, 'utf8');
   assert.equal(content.includes(pair.code), false);
   assert.equal(content.includes(paired.token), false);
-  assert.deepEqual(await access.authorize(paired.token), paired.client);
+  assert.deepEqual(await access.authorize(paired.token), { ...paired.client, lastSeenAt: new Date(now).toISOString() });
   assert.equal(await access.authorize('fake-token'), null);
 });
 
@@ -91,7 +91,9 @@ test('服务端重启后配对授权仍有效，撤销结果也会持久保存',
     { code: await pairCode(server.url, home), name: '重启测试' }) as { token: string; client: { id: string } };
   await server.close();
   server = await standalone(context, home, port);
-  assert.deepEqual(await requestService(server.url, '/v1/session', token), { client: { ...client, name: '重启测试' } });
+  const session = await requestService(server.url, '/v1/session', token) as { client: { id: string; lastSeenAt: string } };
+  assert.equal(session.client.id, client.id);
+  assert.ok(session.client.lastSeenAt);
   await admin(server.url, home, 'revoke', { id: client.id });
   await server.close();
   server = await standalone(context, home, port);

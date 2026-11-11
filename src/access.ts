@@ -14,6 +14,7 @@ export interface PairedClient {
   id: string;
   name: string;
   createdAt: string;
+  lastSeenAt?: string;
 }
 
 interface AccessState {
@@ -84,8 +85,13 @@ export class AccessStore {
 
   private async authorizeUnlocked(token: string): Promise<PairedClient | null> {
     const hash = digest(token);
-    const client = (await this.read()).clients.find((entry) => secretsMatch(hash, entry.digest));
-    return client ? { id: client.id, name: client.name, createdAt: client.createdAt } : null;
+    const state = await this.read();
+    const client = state.clients.find((entry) => secretsMatch(hash, entry.digest));
+    if (client && (!client.lastSeenAt || this.now() - Date.parse(client.lastSeenAt) >= 60_000)) {
+      client.lastSeenAt = new Date(this.now()).toISOString();
+      await this.save(state);
+    }
+    return client ? { id: client.id, name: client.name, createdAt: client.createdAt, ...(client.lastSeenAt ? { lastSeenAt: client.lastSeenAt } : {}) } : null;
   }
 
   private async createPairUnlocked(): Promise<{ code: string; expiresAt: string }> {
@@ -112,7 +118,7 @@ export class AccessStore {
   }
 
   private async listUnlocked(): Promise<PairedClient[]> {
-    return (await this.read()).clients.map(({ id, name, createdAt }) => ({ id, name, createdAt }));
+    return (await this.read()).clients.map(({ id, name, createdAt, lastSeenAt }) => ({ id, name, createdAt, ...(lastSeenAt ? { lastSeenAt } : {}) }));
   }
 
   private async revokeUnlocked(id: string): Promise<void> {

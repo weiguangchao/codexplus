@@ -3,7 +3,7 @@ import { Separator } from '@inquirer/prompts';
 import { stripVTControlCharacters, styleText } from 'node:util';
 import type { Credential, CurrentLogin } from './protocol.js';
 
-export type MainAction = 'switch' | 'add' | 'update' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
 export type AddSource = 'codex' | 'file' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
@@ -105,7 +105,8 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin) {
       disabled: others === 0 ? styleText('dim', credentials.length === 0 ? '(暂无账号)' : '(没有其他账号)') : false,
     },
     { value: 'add' as const, name: '添加账号', description: addDescription },
-    ...(current.status === 'behind' || current.status === 'diverged' ? [{ value: 'update' as const, name: '更新本机登录' }] : []),
+    { value: 'delete' as const, name: '删除账号', disabled: credentials.length === 0 ? '暂无账号' : false },
+    ...(current.status === 'behind' ? [{ value: 'update' as const, name: '更新本机登录' }] : []),
     divider(),
     { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
   ];

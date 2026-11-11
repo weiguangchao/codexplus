@@ -116,7 +116,14 @@ export class Session {
       ? { status: this.digests.get(email) === base ? 'ahead' : login === base ? 'behind' : 'diverged', email } : { status: 'unsaved', email };
   }
 
-  async add(sourcePath: string): Promise<Credential> {
+  snapshotDigest(email: string): string | null { return this.digests.get(email) ?? null; }
+
+  async refreshTimes(email: string): Promise<string> {
+    const auth = parseAuth(await readFile(this.codexAuthPath, 'utf8'));
+    return `本机刷新时间：${typeof auth.last_refresh === 'string' ? auth.last_refresh : '未知'}，服务端刷新时间：${String(this.refreshes.get(email) ?? '未知')}`;
+  }
+
+  async add(sourcePath: string, confirmedBase?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<Credential> {
     if (!sourcePath.trim()) {
       throw new Error('请输入 auth.json 文件路径。');
     }
@@ -124,10 +131,10 @@ export class Session {
     const auth = parseAuth(content);
     const currentFile = expandPath(this.userHome, sourcePath) === this.codexAuthPath;
     const baseline = (await this.owner?.config())?.baseline;
-    let base = currentFile && baseline?.server === this.server ? baseline.digest : null;
+    let base = confirmedBase === undefined ? currentFile && baseline?.server === this.server && baseline.email === idTokenEmail(content) ? baseline.digest : null : confirmedBase;
     let result: unknown;
     for (;;) {
-      try { result = await this.request('/v1/credentials', { auth, base }); break; } catch (error) {
+      try { result = await upload(() => this.request('/v1/credentials', { auth, base })); break; } catch (error) {
         if (!(error instanceof ServiceError) || error.status !== 409 || error.details.code !== 'conflict' ||
           !await this.confirmUpload?.({ ...error.details, localRefresh: typeof auth.last_refresh === 'string' ? auth.last_refresh : null })) throw error;
         base = String(error.details.digest);
@@ -143,6 +150,12 @@ export class Session {
 
   private async baseline(email: string, content: string): Promise<void> {
     if (this.owner) await this.owner.setBaseline({ server: this.server, email, digest: authDigest(content) });
+  }
+
+  async delete(credential: Credential): Promise<void> {
+    const base = this.digests.get(credential.email);
+    if (!base) throw new Error('账号列表已变化，请刷新后重新选择。');
+    await this.request('/v1/credentials/delete', { ...credential, base });
   }
 
   async switch(credential: Credential): Promise<void> {
@@ -184,11 +197,12 @@ export class CredentialClient {
       const value: unknown = JSON.parse(content);
       if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || typeof value.current !== 'string' || !isRecord(value.servers)) throw new Error();
       const servers: Record<string, ServerEntry> = {};
+      const discarded = new Set<string>();
       for (const [url, entry] of Object.entries(value.servers)) {
-        if (value.version === 1 && isRecord(entry) && entry.pairing === 'local') continue;
+        if (value.version === 1 && isRecord(entry) && entry.pairing === 'local') { discarded.add(url); continue; }
         servers[serverUrl(url)] = parseEntry(entry);
       }
-      const current = value.current === 'local' || value.version === 1 && !servers[value.current] && isLoopbackUrl(value.current) ? 'local' : serverUrl(value.current);
+      const current = value.current === 'local' || discarded.has(value.current) || value.version === 1 && !servers[value.current] && isLoopbackUrl(value.current) ? 'local' : serverUrl(value.current);
       let baseline: ClientConfig['baseline'] = isRecord(value.baseline) && typeof value.baseline.server === 'string' && typeof value.baseline.email === 'string' && typeof value.baseline.digest === 'string' ? value.baseline as unknown as ClientConfig['baseline'] : null;
       if (value.version === 1 && baseline && !servers[baseline.server]) baseline = null;
       return { version: 2, current, servers, baseline };
@@ -199,13 +213,17 @@ export class CredentialClient {
 
   async setBaseline(baseline: ClientConfig['baseline']): Promise<void> {
     await withLock(this.home, async () => {
-    const config = await this.config();
-    await writeAtomic(this.configPath, `${JSON.stringify({ ...config, baseline }, null, 2)}\n`);
+      const config = await this.config();
+      await writeAtomic(this.configPath, `${JSON.stringify({ ...config, baseline }, null, 2)}\n`);
     });
   }
 
   private async checkService(url: string): Promise<string> {
-    const result = await requestService(url, '/v1/health');
+    let result: unknown;
+    try { result = await requestService(url, '/v1/health'); } catch (error) {
+      if (error instanceof ServiceError) throw new Error(`${url} 上运行的不是 codexplus 服务端。`, { cause: error });
+      throw error;
+    }
     if (!isRecord(result) || result.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
     if (result.version !== 2) throw new Error('版本不兼容，请把两端升级到同一版本。');
     if (typeof result.id !== 'string' || !result.id) throw new Error('服务端实例信息无效。');

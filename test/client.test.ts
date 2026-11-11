@@ -237,3 +237,59 @@ test('同地址换库先确认实例，不发送旧令牌，确认后重新配�
   assert.notEqual((await client.config()).servers[next.url]?.serverId, JSON.parse(before).servers[next.url].serverId);
   assert.equal((await client.config()).baseline, null);
 });
+
+test('基线区分本机领先、服务端领先和分歧，旧快照必须确认才能覆盖', async (context) => {
+  const userHome = await temporaryHome(context);
+  const { client } = makeClient(context, userHome);
+  const session = await client.connect();
+  context.after(() => session.close());
+  const email = 'person@example.com';
+  const auth = (access: string) => JSON.stringify({ tokens: { access_token: access, id_token: idToken(email) }, last_refresh: access });
+  const source = join(userHome, 'source.json');
+  await writeFile(source, auth('v1'));
+  const credential = await session.add(source);
+  await session.switch(credential);
+  await writeFile(session.codexAuthPath, auth('v2'));
+  assert.equal((await session.current()).status, 'ahead');
+  await session.add(session.codexAuthPath);
+  await writeFile(source, auth('v3'));
+  let confirmations = 0;
+  session.confirmUpload = async (details) => { confirmations++; assert.equal(details.code, 'conflict'); return true; };
+  await session.add(source);
+  assert.equal(confirmations, 1);
+  assert.equal((await session.current()).status, 'behind');
+  session.confirmUpload = async () => false;
+  await assert.rejects(session.add(session.codexAuthPath), /版本已更新/u);
+  await session.switch(credential);
+  assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'v3');
+  await client.setBaseline(null);
+  await writeFile(session.codexAuthPath, auth('v4'));
+  assert.equal((await session.current()).status, 'diverged');
+});
+
+test('确认期间再次上传产生新冲突时再次询问，不使用强制覆盖', async (context) => {
+  const userHome = await temporaryHome(context);
+  const { client } = makeClient(context, userHome);
+  const session = await client.connect();
+  context.after(() => session.close());
+  const source = join(userHome, 'upload.json');
+  const rival = join(userHome, 'rival.json');
+  await writeFile(source, '{"tokens":{"access_token":"v1"}}');
+  await session.add(source);
+  await writeFile(source, '{"tokens":{"access_token":"v2"}}');
+  let asked = 0;
+  session.confirmUpload = async () => {
+    asked++;
+    if (asked === 1) {
+      const other = await client.connect();
+      try {
+        await writeFile(rival, '{"tokens":{"access_token":"v3"}}');
+        other.confirmUpload = async () => true;
+        await other.add(rival);
+      } finally { await other.close(); }
+    }
+    return true;
+  };
+  await session.add(source);
+  assert.equal(asked, 2);
+});
