@@ -1,7 +1,7 @@
 import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import { stripVTControlCharacters, styleText } from 'node:util';
-import type { Credential, CurrentLogin } from './store.js';
+import type { Credential, CurrentLogin } from './protocol.js';
 
 export type MainAction = 'switch' | 'add' | 'exit';
 export type AddSource = 'codex' | 'file' | 'back';
