@@ -14,6 +14,12 @@ interface Config {
   credentials: Credential[];
 }
 
+interface StoreOptions {
+  home?: string;
+  userHome?: string;
+  request?: typeof fetch;
+}
+
 async function readOptional(path: string): Promise<string | null> {
   try {
     return await readFile(path, 'utf8');
@@ -40,14 +46,15 @@ export class CredentialStore {
   readonly configPath: string;
   readonly credentialsPath: string;
   readonly codexAuthPath: string;
+  private readonly userHome: string;
+  private readonly request: typeof fetch;
 
-  constructor(
-    private readonly home = homedir(),
-    private readonly request: typeof fetch = fetch,
-  ) {
-    this.configPath = join(home, '.codexplus', 'config.json');
-    this.credentialsPath = join(home, '.codexplus', 'credentials');
-    this.codexAuthPath = join(home, '.codex', 'auth.json');
+  constructor({ userHome = homedir(), home = join(userHome, '.codexplus'), request = fetch }: StoreOptions = {}) {
+    this.userHome = userHome;
+    this.request = request;
+    this.configPath = join(home, 'config.json');
+    this.credentialsPath = join(home, 'credentials');
+    this.codexAuthPath = join(userHome, '.codex', 'auth.json');
   }
 
   private async readConfig(): Promise<Config> {
@@ -70,7 +77,7 @@ export class CredentialStore {
       });
       return { version: 1, credentials };
     } catch {
-      throw new Error('~/.codexplus/config.json 格式无效，请检查配置；已有文件未被覆盖。');
+      throw new Error(`${this.configPath} 格式无效，请检查配置；已有文件未被覆盖。`);
     }
   }
 
@@ -84,7 +91,7 @@ export class CredentialStore {
     if (!path) {
       throw new Error('请输入 auth.json 文件路径。');
     }
-    const expanded = path === '~' ? this.home : path.startsWith('~/') ? join(this.home, path.slice(2)) : resolve(path);
+    const expanded = path === '~' ? this.userHome : path.startsWith('~/') ? join(this.userHome, path.slice(2)) : resolve(path);
     const content = await readFile(expanded, 'utf8');
     const auth = parseAuth(content);
     const config = await this.readConfig();

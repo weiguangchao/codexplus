@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 import { input, select } from '@inquirer/prompts';
+import { parseHome } from './options.js';
 import { CredentialStore } from './store.js';
 import { switchCredential } from './switch.js';
 
 async function main(): Promise<void> {
-  if (process.argv.length > 2) {
-    throw new Error('请直接运行 codexplus，通过菜单添加或切换凭证。');
-  }
+  const home = parseHome(process.argv.slice(2));
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('请在交互式终端中运行 codexplus。');
   }
@@ -18,7 +17,7 @@ async function main(): Promise<void> {
       { name: '切换凭证', value: 'switch' },
     ],
   });
-  const store = new CredentialStore();
+  const store = new CredentialStore({ home });
 
   if (action === 'add') {
     const path = await input({

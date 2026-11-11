@@ -13,7 +13,14 @@ npm install --global .
 codexplus
 ```
 
-也可以使用 `npm run dev` 启动开发版本。安装后直接运行 `codexplus`，不接受子命令或位置参数。
+安装后直接运行 `codexplus`，默认使用 `~/.codexplus` 作为 HOME 目录。可以通过 `--home <路径>` 或 `--home=<路径>` 指定其他目录，支持绝对路径、相对当前工作目录的路径和 `~/`：
+
+```sh
+codexplus --home /path/to/codexplus
+codexplus --home ./.codexplus
+```
+
+不接受子命令或位置参数。
 
 ## 使用
 
@@ -31,6 +38,8 @@ codexplus
 | 配置与凭证索引 | `~/.codexplus/config.json` |
 | 已保存凭证 | `~/.codexplus/credentials/codex-<邮箱>.json` |
 | 切换目标 | `~/.codex/auth.json` |
+
+上表中的配置和已保存凭证路径以默认 HOME 目录为例。指定 `--home <目录>` 后，分别使用 `<目录>/config.json` 和 `<目录>/credentials/codex-<邮箱>.json`。切换目标和添加凭证时 `~/` 的含义仍以系统用户主目录为准。
 
 首次成功添加时创建配置，格式如下。配置不保存 token。
 
@@ -67,9 +76,12 @@ Codex 的存储方式说明见 [OpenAI 官方认证文档](https://developers.op
 
 ```sh
 npm ci
+npm run dev
 npm run check
 npm pack --dry-run
 ```
+
+本地开发和手动测试使用 `npm run dev`，该命令显式传入 `--home .codexplus`，将配置和已保存凭证放在项目根目录的 `.codexplus/` 中；该目录已加入 Git 忽略规则。
 
 `check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 强制禁止 JavaScript / TypeScript 中的行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
 
