@@ -1,6 +1,15 @@
 export interface AuthTokens {
   access_token: string;
-  account_id?: string;
+  id_token?: unknown;
+  refresh_token?: unknown;
+  account_id?: unknown;
+}
+
+export interface Auth {
+  auth_mode?: unknown;
+  OPENAI_API_KEY?: unknown;
+  tokens: AuthTokens;
+  last_refresh?: unknown;
 }
 
 export interface Account {
@@ -11,7 +20,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function parseAuth(content: string): AuthTokens {
+export function parseAuth(content: string): Auth {
   let auth: unknown;
   try {
     auth = JSON.parse(content);
@@ -29,10 +38,18 @@ export function parseAuth(content: string): AuthTokens {
   }
 
   const tokens: AuthTokens = { access_token: auth.tokens.access_token };
-  if (typeof auth.tokens.account_id === 'string' && auth.tokens.account_id) {
-    tokens.account_id = auth.tokens.account_id;
+  for (const key of ['id_token', 'refresh_token', 'account_id'] as const) {
+    if (Object.hasOwn(auth.tokens, key)) {
+      tokens[key] = auth.tokens[key];
+    }
   }
-  return tokens;
+  const filtered: Auth = { tokens };
+  for (const key of ['auth_mode', 'OPENAI_API_KEY', 'last_refresh'] as const) {
+    if (Object.hasOwn(auth, key)) {
+      filtered[key] = auth[key];
+    }
+  }
+  return filtered;
 }
 
 export function credentialFilename(email: string): string {
@@ -51,7 +68,7 @@ export async function lookupAccount(tokens: AuthTokens, request: typeof fetch = 
     Authorization: `Bearer ${tokens.access_token}`,
     Accept: 'application/json',
   };
-  if (tokens.account_id) {
+  if (typeof tokens.account_id === 'string' && tokens.account_id) {
     headers['ChatGPT-Account-Id'] = tokens.account_id;
   }
 

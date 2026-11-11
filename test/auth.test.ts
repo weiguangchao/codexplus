@@ -4,10 +4,9 @@ import { credentialFilename, lookupAccount, parseAuth } from '../src/auth.js';
 
 test('读取 ChatGPT token，同时保留可选的账号 ID', () => {
   assert.deepEqual(parseAuth('{"tokens":{"access_token":"fake-access","account_id":"fake-account"}}'), {
-    access_token: 'fake-access',
-    account_id: 'fake-account',
+    tokens: { access_token: 'fake-access', account_id: 'fake-account' },
   });
-  assert.deepEqual(parseAuth('{"tokens":{"access_token":"fake-access"}}'), { access_token: 'fake-access' });
+  assert.deepEqual(parseAuth('{"tokens":{"access_token":"fake-access"}}'), { tokens: { access_token: 'fake-access' } });
 });
 
 test('拒绝无效 JSON、API key 登录和缺失的 access token', () => {

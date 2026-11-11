@@ -6,7 +6,11 @@ import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { CredentialStore } from '../src/store.js';
 
-const original = '{\n  "tokens": {"access_token": "fake-access", "refresh_token": "fake-refresh", "id_token": "fake-id"},\n  "last_refresh": "2026-11-11T00:00:00Z",\n  "extra": true\n}\n';
+const original = '{\n  "tokens": {"access_token": "fake-access", "refresh_token": "fake-refresh", "id_token": "fake-id", "extra": true},\n  "last_refresh": "2026-11-11T00:00:00Z",\n  "extra": true\n}\n';
+const filtered = `${JSON.stringify({
+  tokens: { access_token: 'fake-access', id_token: 'fake-id', refresh_token: 'fake-refresh' },
+  last_refresh: '2026-11-11T00:00:00Z',
+}, null, 2)}\n`;
 const account: typeof fetch = async () => Response.json({ email: 'person@example.com' });
 
 async function temporaryHome(context: TestContext): Promise<string> {
@@ -15,7 +19,7 @@ async function temporaryHome(context: TestContext): Promise<string> {
   return home;
 }
 
-test('添加凭证时原样保存文件，创建配置，不切换现有账号', async (context) => {
+test('添加凭证时过滤顶层和 tokens 的额外字段，缺失字段不补齐，源文件不变', async (context) => {
   const home = await temporaryHome(context);
   const source = join(home, 'input.json');
   await writeFile(source, original);
@@ -23,7 +27,8 @@ test('添加凭证时原样保存文件，创建配置，不切换现有账号',
 
   assert.deepEqual(await store.list(), []);
   assert.deepEqual(await store.add(source), { type: 'codex', email: 'person@example.com' });
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), original);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
+  assert.equal(await readFile(source, 'utf8'), original);
   assert.deepEqual(JSON.parse(await readFile(store.configPath, 'utf8')), {
     version: 1,
     credentials: [{ type: 'codex', email: 'person@example.com' }],
@@ -32,17 +37,55 @@ test('添加凭证时原样保存文件，创建配置，不切换现有账号',
   assert.deepEqual(await readdir(store.credentialsPath), ['codex-person@example.com.json']);
 });
 
+for (const fields of [
+  {
+    auth_mode: 'chatgpt',
+    OPENAI_API_KEY: null,
+    tokens: { id_token: 'fake-id', access_token: 'fake-access', refresh_token: 'fake-refresh', account_id: 'fake-account' },
+    last_refresh: '2026-11-11T00:00:00Z',
+  },
+  {
+    auth_mode: null,
+    OPENAI_API_KEY: null,
+    tokens: { id_token: null, access_token: 'fake-access', refresh_token: null, account_id: null },
+    last_refresh: null,
+  },
+]) {
+  test(`白名单字段保留原值，包括 null（auth_mode=${String(fields.auth_mode)}）`, async (context) => {
+    const home = await temporaryHome(context);
+    const source = join(home, 'input.json');
+    await writeFile(source, JSON.stringify({
+      ...fields,
+      extra: { nested: true },
+      tokens: { ...fields.tokens, extra: 'discarded' },
+    }));
+    const request: typeof fetch = async (_url, options) => {
+      assert.deepEqual(options?.headers, {
+        Authorization: 'Bearer fake-access',
+        Accept: 'application/json',
+        ...(fields.tokens.account_id === null ? {} : { 'ChatGPT-Account-Id': fields.tokens.account_id }),
+      });
+      return Response.json({ email: 'person@example.com' });
+    };
+    const store = new CredentialStore(home, request);
+    await store.add(source);
+    assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8')), fields);
+  });
+}
+
 test('重复添加同一邮箱时更新文件，配置中不重复注册', async (context) => {
   const home = await temporaryHome(context);
   const source = join(home, 'input.json');
   const store = new CredentialStore(home, account);
   await writeFile(source, original);
   await store.add(source);
-  const replacement = '{"tokens":{"access_token":"fake-new-access"},"custom":"retained"}\n';
+  const replacement = '{"tokens":{"access_token":"fake-new-access","custom":"discarded"},"custom":"discarded"}\n';
   await writeFile(source, replacement);
   await store.add(source);
 
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), replacement);
+  assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8')), {
+    tokens: { access_token: 'fake-new-access' },
+  });
   assert.deepEqual(await store.list(), [{ type: 'codex', email: 'person@example.com' }]);
 });
 
@@ -86,7 +129,7 @@ test('查询失败时不更改已有凭证和配置', async (context) => {
   const denied: typeof fetch = async () => new Response(null, { status: 401 });
   await assert.rejects(new CredentialStore(home, denied).add(source), /HTTP 401/u);
   assert.equal(await readFile(store.configPath, 'utf8'), configBefore);
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), original);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
 });
 
 test('接口返回危险邮箱时不创建存储目录', async (context) => {
@@ -147,7 +190,7 @@ test('配置提交失败时恢复同邮箱的原始凭证', async (context) => {
     return Response.json({ email: 'person@example.com' });
   };
   await assert.rejects(new CredentialStore(home, request).add(source));
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), original);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
 });
 
 test('切换账号时离线原样覆盖 ~/.codex/auth.json', async (context) => {
@@ -160,7 +203,7 @@ test('切换账号时离线原样覆盖 ~/.codex/auth.json', async (context) => 
   await writeFile(store.codexAuthPath, '{"previous":true}');
   const noNetwork: typeof fetch = async () => { throw new Error('切换不应请求网络'); };
   await new CredentialStore(home, noNetwork).switch(credential);
-  assert.equal(await readFile(store.codexAuthPath, 'utf8'), original);
+  assert.equal(await readFile(store.codexAuthPath, 'utf8'), filtered);
   assert.deepEqual(await readdir(join(home, '.codex')), ['auth.json']);
 });
 
@@ -170,7 +213,7 @@ test('首次切换时创建 ~/.codex 目录', async (context) => {
   await writeFile(source, original);
   const store = new CredentialStore(home, account);
   await store.switch(await store.add(source));
-  assert.equal(await readFile(store.codexAuthPath, 'utf8'), original);
+  assert.equal(await readFile(store.codexAuthPath, 'utf8'), filtered);
 });
 
 test('缺失、损坏或未注册的凭证不会覆盖当前登录', async (context) => {
@@ -184,10 +227,10 @@ test('缺失、损坏或未注册的凭证不会覆盖当前登录', async (cont
   const savedPath = join(store.credentialsPath, 'codex-person@example.com.json');
   await writeFile(savedPath, '{"broken":true}');
   await assert.rejects(store.switch(credential), /access_token/u);
-  assert.equal(await readFile(store.codexAuthPath, 'utf8'), original);
+  assert.equal(await readFile(store.codexAuthPath, 'utf8'), filtered);
   await rm(savedPath);
   await assert.rejects(store.switch(credential), { code: 'ENOENT' });
-  assert.equal(await readFile(store.codexAuthPath, 'utf8'), original);
+  assert.equal(await readFile(store.codexAuthPath, 'utf8'), filtered);
 });
 
 test('Unix 上的凭证和配置权限为 0600，新增目录为 0700', { skip: process.platform === 'win32' }, async (context) => {
