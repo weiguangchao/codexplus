@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { withLock } from './lock.js';
 import { isRecord } from './auth.js';
 import { readOptional, writeAtomic } from './files.js';
 import { secretsMatch } from './local-codes.js';
@@ -35,7 +36,7 @@ function parseState(content: string): AccessState {
 export class AccessStore {
   readonly path: string;
 
-  constructor(home: string, private readonly now = Date.now) {
+  constructor(private readonly home: string, private readonly now = Date.now) {
     this.path = join(home, 'server-access.json');
   }
 
@@ -55,32 +56,40 @@ export class AccessStore {
     await writeAtomic(this.path, `${JSON.stringify(state, null, 2)}\n`);
   }
 
-  async check(): Promise<void> {
+  async check(): Promise<void> { return await withLock(this.home, () => this.checkUnlocked()); }
+  async authorize(token: string): Promise<PairedClient | null> { return await withLock(this.home, () => this.authorizeUnlocked(token)); }
+  async createPair() { return await withLock(this.home, () => this.createPairUnlocked()); }
+  async redeem(code: string, name: string) { return await withLock(this.home, () => this.redeemUnlocked(code, name)); }
+  async addClient(name: string) { return await withLock(this.home, () => this.addClientUnlocked(name)); }
+  async list(): Promise<PairedClient[]> { return await withLock(this.home, () => this.listUnlocked()); }
+  async revoke(id: string): Promise<void> { return await withLock(this.home, () => this.revokeUnlocked(id)); }
+
+  private async checkUnlocked(): Promise<void> {
     await this.read();
   }
 
-  async authorize(token: string): Promise<PairedClient | null> {
+  private async authorizeUnlocked(token: string): Promise<PairedClient | null> {
     const hash = digest(token);
     const client = (await this.read()).clients.find((entry) => secretsMatch(hash, entry.digest));
     return client ? { id: client.id, name: client.name, createdAt: client.createdAt } : null;
   }
 
-  async createPair(): Promise<{ code: string; expiresAt: string }> {
+  private async createPairUnlocked(): Promise<{ code: string; expiresAt: string }> {
     const code = randomBytes(16).toString('base64url');
     const expiresAt = this.now() + 5 * 60_000;
     await this.save({ ...await this.read(), pair: { digest: digest(code), expiresAt } });
     return { code, expiresAt: new Date(expiresAt).toISOString() };
   }
 
-  async redeem(code: string, name: string): Promise<{ token: string; client: PairedClient }> {
+  private async redeemUnlocked(code: string, name: string): Promise<{ token: string; client: PairedClient }> {
     const state = await this.read();
     if (!state.pair || state.pair.expiresAt <= this.now() || !secretsMatch(digest(code), state.pair.digest)) {
       throw new Error('配对码无效、已过期或已使用，请在服务端重新生成。');
     }
-    return await this.addClient(name, { ...state, pair: null });
+    return await this.addClientUnlocked(name, { ...state, pair: null });
   }
 
-  async addClient(name: string, current?: AccessState): Promise<{ token: string; client: PairedClient }> {
+  private async addClientUnlocked(name: string, current?: AccessState): Promise<{ token: string; client: PairedClient }> {
     const state = current ?? await this.read();
     const token = randomBytes(32).toString('base64url');
     const client: PairedClient = { id: randomUUID(), name, createdAt: new Date(this.now()).toISOString() };
@@ -88,11 +97,11 @@ export class AccessStore {
     return { token, client };
   }
 
-  async list(): Promise<PairedClient[]> {
+  private async listUnlocked(): Promise<PairedClient[]> {
     return (await this.read()).clients.map(({ id, name, createdAt }) => ({ id, name, createdAt }));
   }
 
-  async revoke(id: string): Promise<void> {
+  private async revokeUnlocked(id: string): Promise<void> {
     const state = await this.read();
     if (!state.clients.some((client) => client.id === id)) {
       throw new Error('未找到该客户端。');

@@ -53,7 +53,6 @@ export async function startServer({
 }> {
   const access = new AccessStore(home);
   const store = new CredentialStore({ home, request: accountRequest });
-  let queue: Promise<unknown> = Promise.resolve();
 
   function clientName(value: unknown): string {
     if (typeof value !== 'string' || !value.trim() || value.length > 100) {
@@ -162,12 +161,8 @@ export async function startServer({
     response.setHeader('X-Content-Type-Options', 'nosniff');
     const handle = async (): Promise<void> => {
       const body = request.method === 'POST' ? await readBody(request) : {};
-      const operation = queue.then(async () => {
-        await ready;
-        return await route(request, body);
-      });
-      queue = operation.catch(() => {});
-      response.end(JSON.stringify(await operation));
+      await ready;
+      response.end(JSON.stringify(await route(request, body)));
     };
     void handle().catch((error: unknown) => {
       request.resume();

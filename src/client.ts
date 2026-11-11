@@ -1,3 +1,4 @@
+import { withLock } from './lock.js';
 import { readFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
@@ -197,8 +198,10 @@ export class CredentialClient {
   }
 
   async setBaseline(baseline: ClientConfig['baseline']): Promise<void> {
+    await withLock(this.home, async () => {
     const config = await this.config();
     await writeAtomic(this.configPath, `${JSON.stringify({ ...config, baseline }, null, 2)}\n`);
+    });
   }
 
   private async startEmbedded(url: string): Promise<{ close(): Promise<void> } | null> {
@@ -284,9 +287,11 @@ export class CredentialClient {
       entry ??= (local ? await this.localPair(url, name, log, embedded !== null) : null) ??
         await this.manualPair(url, askPairing);
       if (config.current !== url || config.servers[url] !== entry) {
+        await withLock(this.home, async () => {
         const latest = await this.config();
         const next: ClientConfig = { version: 1, current: url, servers: { ...latest.servers, [url]: entry }, baseline: latest.baseline };
         await writeAtomic(this.configPath, `${JSON.stringify(next, null, 2)}\n`);
+        });
       }
       return new Session(url, entry.token, this.userHome, this.codexAuthPath, async () => { await embedded?.close(); },
         entry.pairing === 'local' && !embedded ? verify : undefined, this);

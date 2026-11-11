@@ -2,6 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { authDigest, credentialFilename, isRecord, lookupAccount, parseAuth } from './auth.js';
+import { withLock } from './lock.js';
 import { readOptional, writeAtomic } from './files.js';
 import { conflict, parseCredential } from './protocol.js';
 import type { Credential } from './protocol.js';
@@ -12,6 +13,7 @@ interface Config {
 }
 
 export class CredentialStore {
+  private readonly home: string;
   readonly configPath: string;
   readonly credentialsPath: string;
 
@@ -19,6 +21,7 @@ export class CredentialStore {
 
   constructor({ userHome = homedir(), home = join(userHome, '.codexplus'), request = fetch }:
     { home?: string; userHome?: string; request?: typeof fetch } = {}) {
+    this.home = home;
     this.request = request;
     this.configPath = join(home, 'config.json');
     this.credentialsPath = join(home, 'credentials');
@@ -42,15 +45,20 @@ export class CredentialStore {
     }
   }
 
-  async list(): Promise<Credential[]> {
+  async list(): Promise<Credential[]> { return await withLock(this.home, () => this.listUnlocked()); }
+  async get(credential: Credential): Promise<string> { return await withLock(this.home, () => this.getUnlocked(credential)); }
+  async digest(credential: Credential): Promise<string | null> { return await withLock(this.home, () => this.digestUnlocked(credential)); }
+
+  private async listUnlocked(): Promise<Credential[]> {
     const config = await this.readConfig();
     return config.credentials.toSorted((left, right) => left.email.localeCompare(right.email));
   }
 
   async add(content: string, base: string | null = null): Promise<Credential> {
     const auth = parseAuth(content);
-    const config = await this.readConfig();
     const { email } = await lookupAccount(auth.tokens, this.request);
+    return await withLock(this.home, async () => {
+    const config = await this.readConfig();
     const credential: Credential = { type: 'codex', email };
     const destination = join(this.credentialsPath, credentialFilename(email));
     const previous = await readOptional(destination);
@@ -75,10 +83,11 @@ export class CredentialStore {
     }
 
     return credential;
+    });
   }
 
-  async get(credential: Credential): Promise<string> {
-    const credentials = await this.list();
+  private async getUnlocked(credential: Credential): Promise<string> {
+    const credentials = await this.listUnlocked();
     if (!credentials.some((entry) => entry.type === credential.type && entry.email === credential.email)) {
       throw new Error('未找到所选凭证，请先添加。');
     }
@@ -88,7 +97,7 @@ export class CredentialStore {
     return content;
   }
 
-  async digest(credential: Credential): Promise<string | null> {
+  private async digestUnlocked(credential: Credential): Promise<string | null> {
     try {
       const content = await readFile(join(this.credentialsPath, credentialFilename(credential.email)), 'utf8');
       return authDigest(content);

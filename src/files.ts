@@ -1,3 +1,4 @@
+import { setTimeout } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -19,7 +20,13 @@ export async function writeAtomic(path: string, content: string): Promise<void> 
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
     await writeFile(temporary, content, { flag: 'wx', mode: 0o600 });
-    await rename(temporary, path);
+    const started = Date.now();
+    for (;;) {
+      try { await rename(temporary, path); break; } catch (error) {
+        if (process.platform !== 'win32' || !isRecord(error) || !['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code)) || Date.now() - started >= 2_000) throw error;
+        await setTimeout(20);
+      }
+    }
   } finally {
     await rm(temporary, { force: true });
   }

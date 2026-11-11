@@ -172,8 +172,8 @@ test('配置提交失败时撤回新添加的凭证', async (context) => {
   };
   const store = new CredentialStore({ userHome: home, request });
   await assert.rejects(store.add(await readFile(source, 'utf8')));
-  assert.deepEqual(await readdir(store.credentialsPath), []);
-  assert.deepEqual(await readdir(join(home, '.codexplus')), ['config.json', 'credentials']);
+  await assert.rejects(readdir(store.credentialsPath), { code: 'ENOENT' });
+  assert.deepEqual(await readdir(join(home, '.codexplus')), ['config.json']);
 });
 
 test('配置提交失败时恢复同邮箱的原始凭证', async (context) => {
