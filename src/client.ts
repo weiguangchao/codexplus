@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { authDigest, idTokenEmail, isRecord, parseAuth } from './auth.js';
 import { expandPath, readOptional, writeAtomic } from './files.js';
 import { isLoopbackUrl, parseCredential, requestService, serverUrl, ServiceError } from './protocol.js';
-import type { Credential, CurrentLogin } from './protocol.js';
+import type { Credential, CurrentLogin, UploadResult } from './protocol.js';
 import { startServer } from './server.js';
 
 export interface ServerEntry {
@@ -134,7 +134,7 @@ export class Session {
     return `本机刷新时间：${typeof auth.last_refresh === 'string' ? auth.last_refresh : '未知'}，服务端刷新时间：${String(this.refreshes.get(email) ?? '未知')}`;
   }
 
-  async add(sourcePath: string, confirmedBase?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<Credential> {
+  async add(sourcePath: string, confirmedBase?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
     if (!sourcePath.trim()) {
       throw new Error('请输入 auth.json 文件路径。');
     }
@@ -153,12 +153,12 @@ export class Session {
         base = String(error.details.digest);
       }
     }
-    if (!isRecord(result)) {
+    if (!isRecord(result) || typeof result.changed !== 'boolean') {
       throw new Error('服务端凭证响应格式无效。');
     }
     const credential = parseCredential(result.credential);
     if (currentFile) await this.baseline(credential.email, content);
-    return credential;
+    return { credential, changed: result.changed };
   }
 
   private async baseline(email: string, content: string): Promise<void> {

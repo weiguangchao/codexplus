@@ -79,7 +79,7 @@ test('自定义 HOME 时本地服务端写入客户端指定目录，~/ 输入�
   const { client } = makeClient(context, userHome, home);
   const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
   await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
-  const credential = await session.add('~/input.json');
+  const { credential } = await session.add('~/input.json');
   await session.switch(credential);
   await session.close();
   assert.deepEqual(await readJson(join(home, 'config.json')), { version: 1, credentials: [credential] });
@@ -109,7 +109,7 @@ test('服务端凭证损坏、选项不存在或本地输入无效时，不覆�
   await assert.rejects(session.add(join(userHome, 'invalid.json')), /access_token/u);
   assert.deepEqual(await session.list(), []);
   await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
-  const credential = await session.add(join(userHome, 'input.json'));
+  const { credential } = await session.add(join(userHome, 'input.json'));
   await session.switch(credential);
   const before = await readFile(session.codexAuthPath, 'utf8');
   await assert.rejects(session.switch({ type: 'codex', email: 'missing@example.com' }), /未找到/u);
@@ -123,7 +123,7 @@ test('Unix 上客户端和服务端的敏感文件权限为 0600，目录为 070
   const { client } = makeClient(context, userHome);
   const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
   await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
-  await session.switch(await session.add(join(userHome, 'input.json')));
+  await session.switch((await session.add(join(userHome, 'input.json'))).credential);
   await session.close();
   for (const path of [client.configPath, join(client.home, 'config.json'),
     join(client.home, 'credentials', 'codex-person@example.com.json'), client.codexAuthPath]) {
@@ -250,7 +250,7 @@ test('基线区分本机领先、服务端领先和分歧，旧快照必须确�
   const auth = (access: string) => JSON.stringify({ tokens: { access_token: access, id_token: idToken(email) }, last_refresh: access });
   const source = join(userHome, 'source.json');
   await writeFile(source, auth('v1'));
-  const credential = await session.add(source);
+  const { credential } = await session.add(source);
   await session.switch(credential);
   await writeFile(session.codexAuthPath, auth('v2'));
   assert.equal((await session.current()).status, 'ahead');

@@ -7,6 +7,11 @@ export interface Credential {
   email: string;
 }
 
+export interface UploadResult {
+  credential: Credential;
+  changed: boolean;
+}
+
 export type CurrentLogin =
   | { status: 'none' }
   | { status: 'saved'; email: string }

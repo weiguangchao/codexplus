@@ -96,9 +96,9 @@ export async function startServer({
       try {
         if (path === '/v1/credentials') {
           if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
-          const credential = await store.add(JSON.stringify(body.auth), body.base);
-          await recordCommitted(home, '上传', client, { email: credential.email });
-          return { credential };
+          const result = await store.add(JSON.stringify(body.auth), body.base);
+          if (result.changed) await recordCommitted(home, '上传', client, { email: result.credential.email });
+          return result;
         }
         const credential = parseCredential(body);
         if (path === '/v1/credentials/delete') {

@@ -15,7 +15,7 @@ for (const broken of [null, '{broken', '{"tokens":{}}']) {
     const server = await standalone(context, home);
     const { token } = await new AccessStore(home).addClient('测试');
     const store = new CredentialStore({ home, request: account });
-    const credential = await store.add('{"tokens":{"access_token":"test"}}');
+    const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
     const base = await store.digest(credential);
     const path = join(store.credentialsPath, 'codex-person@example.com.json');
     if (broken === null) await rm(path);
@@ -40,7 +40,7 @@ test('健康快照拒绝 null，删除请求必须提供 base，未注册账号�
   const server = await standalone(context, home);
   const { token } = await new AccessStore(home).addClient('测试');
   const store = new CredentialStore({ home, request: account });
-  const credential = await store.add('{"tokens":{"access_token":"test"}}');
+  const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
   const awaitDigest = await store.digest(credential);
   await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, { ...credential, base: null }), (error) => {
     assert.ok(error instanceof ServiceError);
@@ -60,7 +60,7 @@ test('Session 删除损坏账号，删除菜单显示说明，未列出的账号
   context.after(() => session.close());
   const source = join(userHome, 'input.json');
   await writeFile(source, '{"tokens":{"access_token":"test"}}');
-  const credential = await session.add(source);
+  const { credential } = await session.add(source);
   await writeFile(join(client.home, 'credentials', 'codex-person@example.com.json'), '{broken');
   const credentials = await session.list();
   const choices = deleteChoices(credentials, (email) => session.snapshotDigest(email));

@@ -13,7 +13,7 @@ import { account, standalone, temporaryHome } from './helpers.js';
 test('条件删除拒绝不存在和过期快照，成功后索引与文件一致', async (context) => {
   const home = await temporaryHome(context);
   const store = new CredentialStore({ home, request: account });
-  const credential = await store.add('{"tokens":{"access_token":"old"}}', null);
+  const { credential } = await store.add('{"tokens":{"access_token":"old"}}', null);
   const base = (await store.digest(credential))!;
   await assert.rejects(store.delete({ type: 'codex', email: 'missing@example.com' }, base), /未找到/u);
   await store.add('{"tokens":{"access_token":"new"}}', base);

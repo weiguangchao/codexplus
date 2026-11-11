@@ -69,9 +69,9 @@ async function validatePath(store: Session, value: string): Promise<string | tru
 }
 
 async function saveFrom(store: Session, credentials: Credential[], path: string, base?: string | null): Promise<Credential> {
-  const credential = await store.add(path, base, (task) => withSpinner('正在向 ChatGPT 查询账号邮箱…', task));
+  const { credential, changed } = await store.add(path, base, (task) => withSpinner('正在向 ChatGPT 查询账号邮箱…', task));
   const existed = credentials.some((entry) => entry.email === credential.email);
-  report(symbols.success, `${existed ? '已更新' : '已保存'} ${styleText('bold', credential.email)}`, tildify(store, expandPath(store.userHome, path)));
+  report(symbols.success, `${changed ? existed ? '已更新' : '已保存' : '已是最新，无需更新'} ${styleText('bold', credential.email)}`, tildify(store, expandPath(store.userHome, path)));
   return credential;
 }
 

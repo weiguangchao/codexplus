@@ -5,7 +5,7 @@ import { authDigest, credentialFilename, isRecord, lookupAccount, parseAuth } fr
 import { withLock } from './lock.js';
 import { readOptional, writeAtomic } from './files.js';
 import { conflict, parseCredential } from './protocol.js';
-import type { Credential } from './protocol.js';
+import type { Credential, UploadResult } from './protocol.js';
 
 interface Config {
   version: 1;
@@ -82,7 +82,7 @@ export class CredentialStore {
     return config.credentials.toSorted((left, right) => left.email.localeCompare(right.email));
   }
 
-  async add(content: string, base: string | null = null): Promise<Credential> {
+  async add(content: string, base: string | null = null): Promise<UploadResult> {
     const auth = parseAuth(content);
     const { email } = await lookupAccount(auth.tokens, this.request);
     return await withLock(this.home, async () => {
@@ -94,7 +94,7 @@ export class CredentialStore {
       if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
         let digest: string | null;
         try { digest = authDigest(previous); } catch { digest = null; }
-        if (digest !== null && digest === authDigest(content)) return credential;
+        if (digest !== null && digest === authDigest(content)) return { credential, changed: false };
         if (digest !== null && digest !== base) throw conflict(email, previous);
       }
       await writeAtomic(destination, `${JSON.stringify(auth, null, 2)}\n`);
@@ -111,7 +111,7 @@ export class CredentialStore {
         throw error;
       }
 
-      return credential;
+      return { credential, changed: true };
     });
   }
 
