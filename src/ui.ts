@@ -1,6 +1,7 @@
 import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
-import { stripVTControlCharacters, styleText } from 'node:util';
+import stringWidth from 'fast-string-width';
+import { styleText } from 'node:util';
 import { newerRefresh } from './auth.js';
 import type { Credential, CurrentLogin } from './protocol.js';
 
@@ -20,7 +21,7 @@ export const symbols = {
 
 const divider = () => new Separator(styleText('dim', ` ${figures.line.repeat(6)}`));
 const prefix = { idle: styleText('cyan', '?'), done: styleText('green', figures.tick) };
-const error = (text: string) => `${symbols.failure} ${styleText('red', text)}`;
+const error = (text: string) => `${symbols.failure} ${styleText('red', wrapWords(text, (process.stdout.columns || 80) - 2).replaceAll('\n', '\n  '))}`;
 
 export function selectTheme(escapeLabel: string) {
   return {
@@ -28,7 +29,7 @@ export function selectTheme(escapeLabel: string) {
     style: {
       error,
       disabled: (text: string) => styleText('dim', text.replace(/^- /u, '  ')),
-      description: (text: string) => styleText('dim', text),
+      description: (text: string) => styleText('dim', wrapWords(text, (process.stdout.columns || 80) - 2)),
       keysHelpTip: (keys: [string, string][]) =>
         [...keys, ['esc', escapeLabel] as [string, string]]
           .map(([key, action]) => `${styleText('bold', key)} ${styleText('dim', keyLabels[action] ?? action)}`)
@@ -76,7 +77,7 @@ export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth
   if (current.status === 'invalid') {
     return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
   }
-  return styleText('dim', `${dots.empty} 未登录（未找到 ${authPath}）`);
+  return styleText('dim', `${dots.empty} 未登录\n  未找到登录文件：\n  ${fitPath(authPath, (process.stdout.columns || 80) - 2)}`);
 }
 
 export function renderTitle(version: string): string {
@@ -210,36 +211,62 @@ export function line(symbol: string, text: string, detail?: string): string {
   }
   const columns = process.stdout.columns || 80;
   const separator = displayWidth(`${head}  ${detail}`) > columns ? '\n  ' : '  ';
-  return `${head}${separator}${styleText('dim', detail)}`;
+  const available = separator.startsWith('\n') ? columns - 2 : columns - displayWidth(head) - 2;
+  return `${head}${separator}${styleText('dim', wrapWords(detail, available).replaceAll('\n', '\n  '))}`;
+}
+
+export function fitPath(path: string, columns: number): string {
+  const width = Math.max(1, columns);
+  if (displayWidth(path) <= width) return path;
+  const points = Array.from(path);
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  const suffix = path.slice(separator);
+  if (separator >= 0 && suffix.length < path.length && displayWidth(suffix) <= width - 2) {
+    return `${fit(path.slice(0, path.length - suffix.length), width - displayWidth(suffix))}${suffix}`;
+  }
+  const head = fit(path, Math.max(1, Math.floor(width / 3)));
+  let tail = '';
+  while (points.length > 0 && displayWidth(head + points.at(-1)! + tail) <= width) tail = points.pop()! + tail;
+  return head + tail;
+}
+
+export function pathLabel(label: string, path: string, columns = process.stdout.columns || 80): string {
+  const inline = `${label}  ${path}`;
+  return displayWidth(inline) <= columns ? inline : `${label}\n  ${fitPath(path, columns - 2)}`;
+}
+
+export function wrapWords(text: string, columns: number): string {
+  const width = Math.max(1, columns);
+  const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
+  return text.split('\n').map((paragraph) => {
+    const words: string[] = [];
+    for (const { segment } of segmenter.segment(paragraph)) {
+      const previous = words.at(-1);
+      if (previous && (/^[，。；：！？、）】》」』,.!?;:]+$/u.test(segment) || /^[\w~./\\:@+-]+$/u.test(segment) && /^[\w~./\\:@+-]+$/u.test(previous))) words[words.length - 1] += segment;
+      else words.push(segment);
+    }
+    const lines: string[] = [];
+    let line = '';
+    for (const word of words) {
+      if (line && displayWidth(line + word) > width) { lines.push(line.trimEnd()); line = ''; }
+      line += line ? word : word.trimStart();
+    }
+    lines.push(line.trimEnd());
+    return lines.join('\n');
+  }).join('\n');
 }
 
 export function report(symbol: string, text: string, detail?: string): void {
   console.log(`${line(symbol, text, detail)}\n`);
 }
 
-function charWidth(code: number): number {
-  const wide =
-    (code >= 0x1100 && code <= 0x115f) ||
-    (code >= 0x2e80 && code <= 0xa4cf) ||
-    (code >= 0xac00 && code <= 0xd7a3) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe30 && code <= 0xfe4f) ||
-    (code >= 0xff00 && code <= 0xff60) ||
-    (code >= 0xffe0 && code <= 0xffe6);
-  return wide ? 2 : 1;
-}
-
 export function displayWidth(text: string): number {
-  let width = 0;
-  for (const character of stripVTControlCharacters(text)) {
-    width += charWidth(character.codePointAt(0) ?? 0);
-  }
-  return width;
+  return stringWidth(text);
 }
 
 export function fit(text: string, columns: number): string {
   const characters = Array.from(text);
-  const widths = characters.map((character) => charWidth(character.codePointAt(0) ?? 0));
+  const widths = characters.map((character) => displayWidth(character));
   if (widths.reduce((total, width) => total + width, 0) <= columns) {
     return text;
   }

@@ -119,7 +119,7 @@ test('CP-009 区分缺失、无效、不可读和有效未保存，不推荐保�
 
 test('CP-008 与 CP-014 提示使用实际登录路径，帮助提前说明登录类型', () => {
   const path = '/custom codex/auth.json';
-  assert.match(renderStatus({ status: 'none' }, 0, path), /未找到 \/custom codex\/auth.json/u);
+  assert.match(renderStatus({ status: 'none' }, 0, path), /未找到登录文件：[\s\S]*\/custom codex\/auth.json/u);
   const source = addChoices({ status: 'unsaved', email }, path)[0];
   assert.ok(source && 'description' in source);
   assert.equal(source.description, `${path} · ${email}`);

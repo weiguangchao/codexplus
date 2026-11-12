@@ -1,4 +1,4 @@
-import { input, select } from '@inquirer/prompts';
+import { select } from '@inquirer/prompts';
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
@@ -7,6 +7,7 @@ import { UploadCancelled } from './client.js';
 import type { Session } from './client.js';
 import { expandPath } from './files.js';
 import { BACK, escapable, isCancel } from './prompts.js';
+import { pathInput } from './path-input.js';
 import { ServiceError } from './protocol.js';
 import type { Credential, CurrentLogin } from './protocol.js';
 import { confirmRunningCodex } from './switch.js';
@@ -14,10 +15,11 @@ import {
   addChoices,
   describeCurrent,
   deleteChoices,
-  inputTheme,
+  fitPath,
   line,
   report,
   mainChoices,
+  pathLabel,
   menuTheme,
   needsBackup,
   renderStatus,
@@ -41,13 +43,13 @@ function describeError(store: Session, error: unknown): string {
   if (isRecord(error) && typeof error.code === 'string') {
     const path = typeof error.path === 'string' ? tildify(store, error.path) : '';
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
-      return `找不到文件：${path}`;
+      return pathLabel('找不到文件：', path, (process.stdout.columns || 80) - 2);
     }
     if (error.code === 'EACCES' || error.code === 'EPERM') {
-      return `没有权限访问：${path}`;
+      return pathLabel('没有权限访问：', path, (process.stdout.columns || 80) - 2);
     }
     if (error.code === 'EISDIR') {
-      return `这是一个目录，不是 auth.json 文件：${path}`;
+      return pathLabel('这是目录，请输入文件路径：', path, (process.stdout.columns || 80) - 2);
     }
   }
   return error instanceof Error && error.message ? error.message : '操作失败，请重试。';
@@ -60,7 +62,7 @@ async function validatePath(store: Session, value: string): Promise<string | tru
   const path = expandPath(store.userHome, value);
   try {
     if (!(await stat(path)).isFile()) {
-      return `这是一个目录，请输入 auth.json 文件的路径：${tildify(store, path)}`;
+      return pathLabel('这是目录，请输入文件路径：', tildify(store, path), (process.stdout.columns || 80) - 2);
     }
     parseAuth(await readFile(path, 'utf8'));
     return true;
@@ -72,7 +74,7 @@ async function validatePath(store: Session, value: string): Promise<string | tru
 async function saveFrom(store: Session, credentials: Credential[], path: string, base?: string | null): Promise<Credential> {
   const { credential, changed } = await store.add(path, base, (task) => withSpinner('正在向 ChatGPT 查询账号邮箱…', task));
   const existed = credentials.some((entry) => entry.email === credential.email);
-  report(symbols.success, `${changed ? existed ? '已更新' : '已保存' : '已是最新，无需更新'} ${styleText('bold', credential.email)}`, tildify(store, expandPath(store.userHome, path)));
+  report(symbols.success, `${changed ? existed ? '已更新' : '已保存' : '已是最新，无需更新'} ${styleText('bold', credential.email)}`, fitPath(tildify(store, expandPath(store.userHome, path)), (process.stdout.columns || 80) - 2));
   return credential;
 }
 
@@ -89,23 +91,13 @@ async function trySave(store: Session, credentials: Credential[], path: string, 
     }
     const message = describeError(store, error);
     const shown = tildify(store, expandPath(store.userHome, path));
-    report(symbols.failure, styleText('red', `保存失败：${message}`), message.includes(shown) ? undefined : shown);
+    report(symbols.failure, styleText('red', `保存失败：${message}`), isRecord(error) && typeof error.path === 'string' || message.includes(shown) ? undefined : fitPath(shown, (process.stdout.columns || 80) - 2));
     return null;
   }
 }
 
 async function askPath(store: Session, previous: string) {
-  return escapable((context) =>
-    input(
-      {
-        message: `auth.json 路径 ${styleText('dim', '(esc 返回)')}`,
-        validate: (value) => validatePath(store, value),
-        theme: inputTheme,
-        ...(previous ? { default: previous, prefill: 'editable' as const } : {}),
-      },
-      context,
-    ),
-  );
+  return escapable((context) => pathInput({ initial: previous, validate: (value) => validatePath(store, value) }, context));
 }
 
 async function addFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<void> {
@@ -114,7 +106,7 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
   for (;;) {
     const choice = await escapable((context) =>
       select(
-        { message: '从哪里添加？（仅支持 ChatGPT 登录凭证，不接受只有 API key 的文件）', choices: addChoices(current, tildify(store, store.codexAuthPath)), default: source, theme: selectTheme('返回') },
+        { message: '从哪里添加？\n仅支持 ChatGPT 登录凭证。\n不接受只有 API key 的文件。', choices: addChoices(current, tildify(store, store.codexAuthPath)), default: source, theme: selectTheme('返回') },
         context,
       ),
     );
@@ -135,7 +127,7 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
         return;
       }
       if (latest.status === 'saved') {
-        report(symbols.info, `${styleText('bold', latest.email)} 已是最新，无需更新`, `${tildify(store, store.codexAuthPath)} 与已保存的凭证一致`);
+        report(symbols.info, `${styleText('bold', latest.email)} 已是最新，无需更新`, `${fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 2)} 与已保存的凭证一致`);
         return;
       }
       if (latest.status === 'diverged') {
@@ -189,7 +181,7 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead'
 }
 
 async function downloadCurrent(store: Session, email: string): Promise<boolean> {
-  if (!(await confirmRunningCodex({ action: 'update', authPath: tildify(store, store.codexAuthPath), ask: askRunningCodex, log: logRunningCodex }))) {
+  if (!(await confirmRunningCodex({ action: 'update', authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex }))) {
     console.log('');
     return false;
   }
@@ -316,7 +308,7 @@ async function switchFlow(store: Session, credentials: Credential[], current: Cu
       continue;
     }
     if (next === 'switch') {
-      if (!(await confirmRunningCodex({ authPath: tildify(store, store.codexAuthPath), ask: askRunningCodex, log: logRunningCodex }))) {
+      if (!(await confirmRunningCodex({ authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex }))) {
         console.log('');
         return false;
       }
@@ -364,9 +356,12 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
 }
 
 export async function menu(store: Session): Promise<void> {
-  console.log(`${styleText('dim', '服务端  ')}  ${store.server === 'local' ? `本机（目录 ${store.home}）` : store.url}`);
+  if (store.server === 'local') {
+    console.log(`${styleText('dim', '服务端')}  本机`);
+    console.log(pathLabel(styleText('dim', '数据目录'), store.home));
+  } else console.log(pathLabel(styleText('dim', '服务端'), store.url));
   const authPath = tildify(store, store.codexAuthPath);
-  console.log(`${styleText('dim', '登录文件')}  ${authPath}`);
+  console.log(pathLabel(styleText('dim', '登录文件'), authPath));
   for (;;) {
     const credentials = await store.list();
     const current = await store.current();

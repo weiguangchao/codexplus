@@ -24,7 +24,11 @@ export async function confirmRunningCodex({
     for (const { pid, command } of processes) {
       log(`  PID ${pid}  ${command}`);
     }
-    log(`进程存在不代表任务正忙。现在${verb}会改写本机 ${authPath}，可能影响这些会话的后续请求，建议先退出 Codex。`);
+    log('进程存在不代表任务正忙。');
+    log(`现在${verb}会改写本机登录文件：`);
+    log(`  ${authPath}`);
+    log('可能影响这些会话的后续请求。');
+    log('建议先退出 Codex。');
     if (!await ask({ message: action === 'update' ? '仍要更新本机登录吗？' : '仍要切换账号吗？', default: false, action })) {
       log(`已取消${verb}，当前凭证未更改。`);
       return false;

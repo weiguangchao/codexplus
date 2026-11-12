@@ -90,7 +90,9 @@ test('更新本机登录时，进程确认使用更新文案并说明会改写�
     },
     log: (message) => messages.push(message),
   }), false);
-  assert.ok(messages.some((message) => message.includes('改写本机 ~/.codex/auth.json')));
+  assert.ok(messages.includes('现在更新会改写本机登录文件：'));
+  assert.ok(messages.includes('  ~/.codex/auth.json'));
+  assert.ok(messages.includes('建议先退出 Codex。'));
   assert.match(messages.at(-1)!, /已取消更新/u);
   assert.ok(messages.every((message) => !message.includes('切换')));
 });
