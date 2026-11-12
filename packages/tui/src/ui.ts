@@ -81,8 +81,8 @@ export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth
 }
 
 export function renderTitle(version: string): string {
-  const meta = [version ? `v${version}` : '', 'Codex 账号切换'].filter(Boolean).join(' · ');
-  return `\n${styleText(['bold', 'cyan'], 'codexplus')} ${styleText('dim', meta)}\n`;
+  const versionLabel = version ? ` ${styleText('dim', `v${version}`)}` : '';
+  return `\n${styleText(['bold', 'cyan'], 'codexplus')}${versionLabel}\n`;
 }
 
 export function renderStatus(current: CurrentLogin, count: number, authPath = '~/.codex/auth.json'): string {
