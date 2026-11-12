@@ -2,38 +2,30 @@
   "name": "codexplus",
   "version": "0.1.0",
   "description": "通过 C/S 架构集中管理 Codex 凭证，在本机交互式切换账号",
+  "private": true,
   "type": "module",
-  "bin": {
-    "codexplus": "dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "assets/logo.png"
+  "workspaces": [
+    "packages/shared",
+    "packages/app-server",
+    "packages/tui"
   ],
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "tsx src/cli.ts --home .codexplus",
-    "dev:server": "tsx src/cli.ts serve --home .codexplus",
-    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --conditions=source packages/tui/src/cli.ts --home .codexplus",
+    "dev:server": "tsx --conditions=source packages/tui/src/cli.ts serve --home .codexplus",
+    "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "tsx --test test/*.test.ts",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build",
-    "prepack": "npm run build"
+    "test": "tsx --conditions=source --test test/*.test.ts packages/*/test/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/weiguangchao/codexplus.git"
   },
   "license": "MIT",
-  "dependencies": {
-    "@inquirer/core": "^12.1.0",
-    "@inquirer/figures": "^2.1.0",
-    "@inquirer/prompts": "^8.8.0",
-    "fast-string-width": "^3.0.2"
-  },
   "overrides": {
     "minimatch": "^11.0.1"
   },

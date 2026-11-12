@@ -5,3 +5,4 @@ coverage/
 auth.json
 .codexplus/
 .codex/
+*.tsbuildinfo
