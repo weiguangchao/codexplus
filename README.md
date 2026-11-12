@@ -4,10 +4,10 @@
 
 # codexplus
 
-通过 C/S 架构集中保存 Codex / ChatGPT 凭证，在用户自己的电脑上用 TUI 添加和切换账号。只有一个可执行程序 `codexplus`：
+通过 C/S 架构集中保存 Codex / ChatGPT 凭证，在用户自己的电脑上用 TUI 添加和切换账号。仓库是 npm workspaces 组成的 monorepo，提供两个命令：
 
-- **服务端**（`codexplus serve`）保存账户凭证，查询账号邮箱，管理配对和客户端授权，向已授权客户端下发凭证。
-- **客户端**（`codexplus`）是本机 TUI。添加时上传本机文件，切换时下载所选凭证并写入本机登录文件（默认 `~/.codex/auth.json`，设置 `CODEX_HOME` 时使用该目录）。Codex、文件操作和任务执行都在客户端电脑上；服务端不运行 Codex 任务。
+- **服务端**（`codexplus-server`，包 `packages/app-server`）保存账户凭证，查询账号邮箱，管理配对和客户端授权，向已授权客户端下发凭证。
+- **客户端**（`codexplus`，包 `packages/tui`）是本机 TUI。添加时上传本机文件，切换时下载所选凭证并写入本机登录文件（默认 `~/.codex/auth.json`，设置 `CODEX_HOME` 时使用该目录）。Codex、文件操作和任务执行都在客户端电脑上；服务端不运行 Codex 任务。
 
 ## 安装
 
@@ -16,20 +16,23 @@
 ```sh
 npm ci
 npm run build
-npm install --global .
+npm install --global ./packages/tui         # 客户端：codexplus
+npm install --global ./packages/app-server  # 服务端：codexplus-server
 ```
 
-开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（服务端），两者都显式传入 `--home .codexplus`，将数据放在项目根目录已忽略的 `.codexplus/` 中。
+只用本机模式或只连接远程服务端时，安装客户端即可；运行独立服务端的电脑安装 app-server，不需要 TUI 依赖。全局安装会链接到仓库目录，因此需要保留仓库并在更新后重新运行 `npm run build`。
+
+开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（服务端），两者直接运行源码，都显式传入 `--home .codexplus`，将数据放在项目根目录已忽略的 `.codexplus/` 中。
 
 ## 命令
 
 ```sh
 codexplus [--server 地址 | --local] [--home 目录]
-codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]
-codexplus serve pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]
+codexplus-server [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]
+codexplus-server pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]
 ```
 
-独立 `serve` 监听端口默认 `47831`，可用 `--port` 指定。`--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。
+旧的 `codexplus serve ...` 已改为 `codexplus-server ...`，运行旧命令会报错并提示新命令。独立服务端监听端口默认 `47831`，可用 `--port` 指定。`--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。
 
 ## 本机使用
 
@@ -57,7 +60,7 @@ URL 连接只连接已运行的服务端，失败不自动启动、不修改配�
 在服务端电脑上单独启动服务端，可直接提供 TLS：
 
 ```sh
-codexplus serve --host 0.0.0.0 --port 47831 --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
+codexplus-server --host 0.0.0.0 --port 47831 --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
 ```
 
 也可以保持默认的本机 HTTP 监听，通过已有 HTTPS 反向代理对外提供服务。代理需转发请求路径、JSON 内容和 `Authorization` 头，不能向请求添加 `Origin` 头。服务端不会根据 `X-Forwarded-For` 等代理头免除认证。
@@ -65,10 +68,10 @@ codexplus serve --host 0.0.0.0 --port 47831 --tls-cert /path/to/cert.pem --tls-k
 在服务端电脑上，用与服务端相同的系统用户和 `--home` 生成配对码：
 
 ```sh
-codexplus serve pair
+codexplus-server pair
 ```
 
-四个管理命令（pair、clients、revoke、log）要求数据目录已存在且是目录，否则报错并显示解析后的路径，提示检查 `--home` 或先运行 `codexplus serve`，不会创建目录。已有空目录仍可使用管理命令。启动服务端和客户端仍会自动创建所需目录。管理命令直接在目录锁内读写授权文件，服务端没有运行也可用；仅接受 `--home`，不接受 `--port`、`--server`。TLS 证书必须受 Node.js 信任并匹配主机名；私有 CA 可通过 NODE_EXTRA_CA_CERTS 指定。
+四个管理命令（pair、clients、revoke、log）要求数据目录已存在且是目录，否则报错并显示解析后的路径，提示检查 `--home` 或先运行 `codexplus-server`，不会创建目录。已有空目录仍可使用管理命令。启动服务端和客户端仍会自动创建所需目录。管理命令直接在目录锁内读写授权文件，服务端没有运行也可用；仅接受 `--home`，不接受 `--port`、`--server`。TLS 证书必须受 Node.js 信任并匹配主机名；私有 CA 可通过 NODE_EXTRA_CA_CERTS 指定。
 
 配对码有效期为五分钟，只能使用一次，生成新码会使旧码失效。客户端运行：
 
@@ -83,15 +86,15 @@ codexplus --server https://codexplus.example.com
 在服务端查看和撤销客户端授权：
 
 ```sh
-codexplus serve clients
-codexplus serve revoke <客户端ID>
+codexplus-server clients
+codexplus-server revoke <客户端ID>
 ```
 
 撤销后客户端下次连接会提示授权已失效并要求重新配对。撤销访问授权不会删除客户端已经下载的本机登录文件，也不会使其持有的账户 token 在 ChatGPT 上失效。
 
-删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。`serve clients` 显示最近访问时间，无记录为「从未」，每分钟最多更新一次。
+删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。`codexplus-server clients` 显示最近访问时间，无记录为「从未」，每分钟最多更新一次。
 
-`codexplus serve log [--limit 条数] [--home 目录]` 按时间顺序显示最近操作，默认 50 条。记录成功的下载、实际写入的上传、删除、配对、撤销，最多保存 1000 条，不含 token 或凭证内容；每条包含时间、事件、操作者的客户端 ID 和名称，以及账号邮箱或被撤销的客户端。本机模式的操作者记为「本机」，管理命令记为「管理命令」。配对、上传、删除和撤销在完成后记录，记录写入失败不影响结果，只在服务端输出一行警告；下载在返回凭证前记录，记录失败时不返回凭证。
+`codexplus-server log [--limit 条数] [--home 目录]` 按时间顺序显示最近操作，默认 50 条。记录成功的下载、实际写入的上传、删除、配对、撤销，最多保存 1000 条，不含 token 或凭证内容；每条包含时间、事件、操作者的客户端 ID 和名称，以及账号邮箱或被撤销的客户端。本机模式的操作者记为「本机」，管理命令记为「管理命令」。配对、上传、删除和撤销在完成后记录，记录写入失败不影响结果，只在服务端输出一行警告；下载在返回凭证前记录，记录失败时不返回凭证。
 
 ## 文件位置
 
@@ -156,14 +159,24 @@ HTTP 协议版本为 2；连接前检查服务名称和版本，不兼容时不�
 | POST /v1/credentials/download | 按 type、email 下载 |
 | POST /v1/credentials/delete | 按 type、email、base（摘要或 null，必填）条件删除 |
 
-旧的 local-codes/ 目录不再读取或写入，可以自行删除。交互流程在 src/flows.ts，配对、重新配对和覆盖确认的提示在 src/prompts.ts。
+旧的 local-codes/ 目录不再读取或写入，可以自行删除。交互流程在 packages/tui/src/flows.ts，配对、重新配对和覆盖确认的提示在 packages/tui/src/prompts.ts。
+
+## 仓库结构
+
+| 包 | 内容 | 依赖 |
+| --- | --- | --- |
+| `packages/shared`（`@codexplus/shared`） | 凭证解析与摘要、原子写入、目录锁、HTTP 协议、`--home` 和命令参数解析 | 无 |
+| `packages/app-server`（`@codexplus/app-server`） | 凭证库、配对与授权、操作记录、HTTP 服务端，命令 `codexplus-server` | shared |
+| `packages/tui`（`@codexplus/tui`） | 交互式客户端、本机登录文件读写、Codex 进程检测，命令 `codexplus` | shared、app-server（本机模式内嵌服务端） |
+
+各包都是私有包，不发布到 npm，版本保持一致。各包测试放在自己的 `test/` 目录；需要同时启动客户端和服务端的测试放在 tui。开发、类型检查和测试通过 `source` 导出条件直接使用其他包的源码，无需先构建；构建用 `tsc -b` 按依赖顺序输出各包的 `dist/`。
 
 ## 开发与验证
 
 ```sh
 npm ci
 npm run check
-npm pack --dry-run
+npm pack --dry-run --workspaces
 ```
 
 `check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。

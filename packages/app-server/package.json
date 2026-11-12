@@ -1,0 +1,27 @@
+{
+  "name": "@codexplus/app-server",
+  "version": "0.1.0",
+  "description": "codexplus 服务端：保存账户凭证，管理配对和客户端授权",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "codexplus-server": "dist/cli.js"
+  },
+  "dependencies": {
+    "@codexplus/shared": "0.1.0"
+  }
+}

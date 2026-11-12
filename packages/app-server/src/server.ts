@@ -1,0 +1,168 @@
+import { createServer } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { ServerOptions as SecureOptions } from 'node:https';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { recordAudit, recordCommitted } from './audit.js';
+import { AccessStore, secretsMatch } from './access.js';
+import { isRecord, parseAuth, ServiceError, parseCredential } from '@codexplus/shared';
+import { CredentialStore } from './store.js';
+
+class HttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+  if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') {
+    throw new HttpError(415, '请求必须使用 application/json。');
+  }
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+    const buffer = Buffer.from(chunk as Buffer);
+    size += buffer.length;
+    if (size > 128 * 1024) {
+      throw new HttpError(413, '请求内容过大。');
+    }
+    chunks.push(buffer);
+  }
+  try {
+    const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (!isRecord(body)) {
+      throw new Error();
+    }
+    return body;
+  } catch {
+    throw new HttpError(400, '请求 JSON 格式无效。');
+  }
+}
+
+export async function startServer({
+  home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, sessionToken, accountRequest = fetch,
+}: { home?: string; host?: string; port?: number; tls?: SecureOptions; sessionToken?: string; accountRequest?: typeof fetch } = {}): Promise<{
+  url: string;
+  close(): Promise<void>;
+}> {
+  const access = new AccessStore(home);
+  const id = await access.instanceId();
+  const store = new CredentialStore({ home, request: accountRequest });
+
+  function clientName(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim() || value.length > 100) {
+      throw new HttpError(400, '请输入客户端名称（最多 100 字符）。');
+    }
+    return value.trim();
+  }
+
+  async function route(request: IncomingMessage, body: Record<string, unknown>): Promise<unknown> {
+    if (request.headers.origin) {
+      throw new HttpError(403, '不接受浏览器跨站请求。');
+    }
+    const path = request.url ?? '';
+    if (request.method === 'GET' && path === '/v1/health') {
+      return { service: 'codexplus', version: 2, id };
+    }
+    if (request.method === 'POST' && path === '/v1/pair') {
+      if (typeof body.code !== 'string' || body.code.length > 128) {
+        throw new HttpError(400, '请输入配对码。');
+      }
+      const name = clientName(body.name);
+      let result: Awaited<ReturnType<AccessStore['redeem']>>;
+      try {
+        result = await access.redeem(body.code.trim(), name);
+      } catch {
+        throw new HttpError(400, '配对失败：配对码无效、已过期、已使用，或服务端无法保存授权。');
+      }
+      await recordCommitted(home, '配对', result.client);
+      return result;
+    }
+    const authorization = request.headers.authorization ?? '';
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    const client = token && sessionToken && secretsMatch(token, sessionToken) ? { id: 'local', name: '本机' } : token ? await access.authorize(token) : null;
+    if (!client) {
+      throw new HttpError(401, '客户端未获授权或授权已被撤销，需要重新配对。');
+    }
+    if (request.method === 'GET' && path === '/v1/session') {
+      return { client };
+    }
+    if (request.method === 'GET' && path === '/v1/credentials') {
+      return { credentials: await store.snapshots() };
+    }
+    if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download' || path === '/v1/credentials/delete')) {
+      try {
+        if (path === '/v1/credentials') {
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
+          const result = await store.add(JSON.stringify(body.auth), body.base);
+          if (result.changed) await recordCommitted(home, '上传', client, { email: result.credential.email });
+          return result;
+        }
+        const credential = parseCredential(body);
+        if (path === '/v1/credentials/delete') {
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要或 null。');
+          await store.delete(credential, body.base);
+          await recordCommitted(home, '删除', client, { email: credential.email });
+          return { ok: true };
+        }
+        const auth = parseAuth(await store.get(credential));
+        await recordAudit(home, '下载', client, { email: credential.email });
+        return { auth };
+      } catch (error) {
+        if (error instanceof ServiceError) throw error;
+        if (error instanceof Error && !('code' in error)) {
+          throw new HttpError(400, error.message);
+        }
+        throw error;
+      }
+    }
+    throw new HttpError(404, '未找到服务端接口。');
+  }
+
+  const handler = (request: IncomingMessage, response: ServerResponse): void => {
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    const handle = async (): Promise<void> => {
+      const body = request.method === 'POST' ? await readBody(request) : {};
+      await ready;
+      response.end(JSON.stringify(await route(request, body)));
+    };
+    void handle().catch((error: unknown) => {
+      request.resume();
+      response.statusCode = error instanceof HttpError || error instanceof ServiceError ? error.status : 500;
+      response.end(JSON.stringify({ error: error instanceof HttpError || error instanceof ServiceError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。', ...(error instanceof ServiceError ? error.details : {}) }));
+    });
+  };
+  const server = tls ? createSecureServer(tls, handler) : createServer(handler);
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 10_000;
+  server.maxHeadersCount = 50;
+  const ready = new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  }).then(() => access.check());
+  const close = (): Promise<void> => new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+    server.closeIdleConnections();
+  });
+  try {
+    await ready;
+  } catch (error) {
+    if (server.listening) {
+      await close();
+    }
+    throw error;
+  }
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    await close();
+    throw new Error('无法读取服务端监听地址。');
+  }
+  const hostname = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '[::1]' : host.includes(':') ? `[${host}]` : host;
+  return { url: `${tls ? 'https' : 'http'}://${hostname}:${address.port}`, close };
+}

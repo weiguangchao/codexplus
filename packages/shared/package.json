@@ -1,0 +1,21 @@
+{
+  "name": "@codexplus/shared",
+  "version": "0.1.0",
+  "description": "codexplus 客户端与服务端共用的凭证解析、文件读写、目录锁和 HTTP 协议",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}
