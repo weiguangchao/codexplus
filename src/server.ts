@@ -4,10 +4,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ServerOptions as SecureOptions } from 'node:https';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { AccessStore } from './access.js';
+import { recordAudit, recordCommitted } from './audit.js';
+import { AccessStore, secretsMatch } from './access.js';
 import { isRecord, parseAuth } from './auth.js';
-import { consumeLocalCode, createLocalCode, isLocalPurpose, isNonce, localEndpoint } from './local-codes.js';
-import { parseCredential } from './protocol.js';
+import { ServiceError, parseCredential } from './protocol.js';
 import { CredentialStore } from './store.js';
 
 class HttpError extends Error {
@@ -41,19 +41,15 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
   }
 }
 
-function loopback(address: string | undefined): boolean {
-  return address === '::1' || /^127\./u.test(address ?? '') || /^::ffff:127\./u.test(address ?? '');
-}
-
 export async function startServer({
-  home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, accountRequest = fetch,
-}: { home?: string; host?: string; port?: number; tls?: SecureOptions; accountRequest?: typeof fetch } = {}): Promise<{
+  home = join(homedir(), '.codexplus'), host = '127.0.0.1', port = 47831, tls, sessionToken, accountRequest = fetch,
+}: { home?: string; host?: string; port?: number; tls?: SecureOptions; sessionToken?: string; accountRequest?: typeof fetch } = {}): Promise<{
   url: string;
   close(): Promise<void>;
 }> {
   const access = new AccessStore(home);
+  const id = await access.instanceId();
   const store = new CredentialStore({ home, request: accountRequest });
-  let queue: Promise<unknown> = Promise.resolve();
 
   function clientName(value: unknown): string {
     if (typeof value !== 'string' || !value.trim() || value.length > 100) {
@@ -62,72 +58,31 @@ export async function startServer({
     return value.trim();
   }
 
-  async function localRoute(request: IncomingMessage, path: string, body: Record<string, unknown>): Promise<unknown> {
-    if (path === '/v1/local/challenge') {
-      if (!isLocalPurpose(body.purpose) || !isNonce(body.nonce)) {
-        throw new HttpError(400, '本机验证用途或随机数无效。');
-      }
-      const id = await createLocalCode(home, body.purpose, body.nonce, localEndpoint(request.socket.localAddress, request.socket.localPort));
-      if (id === null) {
-        throw new HttpError(429, '本机验证请求过多，请稍后重试。');
-      }
-      return { id };
-    }
-    const pairing = path === '/v1/local/pair';
-    if (!await consumeLocalCode(home, body.proof, pairing ? 'pair' : 'admin')) {
-      throw new HttpError(403, '本机验证失败：客户端或管理命令需要与服务端使用同一系统用户和同一 --home 目录。');
-    }
-    if (pairing) {
-      return await access.addClient(clientName(body.name));
-    }
-    if (path === '/v1/admin/pair') {
-      return await access.createPair();
-    }
-    if (path === '/v1/admin/clients') {
-      return { clients: await access.list() };
-    }
-    if (path === '/v1/admin/revoke') {
-      if (typeof body.id !== 'string') {
-        throw new HttpError(400, '请输入客户端 ID。');
-      }
-      try {
-        await access.revoke(body.id);
-      } catch {
-        throw new HttpError(400, '撤销失败：客户端不存在，或服务端无法保存授权。');
-      }
-      return { ok: true };
-    }
-    throw new HttpError(404, '未找到服务端接口。');
-  }
-
   async function route(request: IncomingMessage, body: Record<string, unknown>): Promise<unknown> {
     if (request.headers.origin) {
       throw new HttpError(403, '不接受浏览器跨站请求。');
     }
     const path = request.url ?? '';
     if (request.method === 'GET' && path === '/v1/health') {
-      return { service: 'codexplus', version: 1 };
+      return { service: 'codexplus', version: 2, id };
     }
     if (request.method === 'POST' && path === '/v1/pair') {
       if (typeof body.code !== 'string' || body.code.length > 128) {
         throw new HttpError(400, '请输入配对码。');
       }
       const name = clientName(body.name);
+      let result: Awaited<ReturnType<AccessStore['redeem']>>;
       try {
-        return await access.redeem(body.code.trim(), name);
+        result = await access.redeem(body.code.trim(), name);
       } catch {
         throw new HttpError(400, '配对失败：配对码无效、已过期、已使用，或服务端无法保存授权。');
       }
-    }
-    if (request.method === 'POST' && (path.startsWith('/v1/local/') || path.startsWith('/v1/admin/'))) {
-      if (!loopback(request.socket.remoteAddress)) {
-        throw new HttpError(403, '本机验证和管理操作只接受回环连接。');
-      }
-      return await localRoute(request, path, body);
+      await recordCommitted(home, '配对', result.client);
+      return result;
     }
     const authorization = request.headers.authorization ?? '';
     const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-    const client = token ? await access.authorize(token) : null;
+    const client = token && sessionToken && secretsMatch(token, sessionToken) ? { id: 'local', name: '本机' } : token ? await access.authorize(token) : null;
     if (!client) {
       throw new HttpError(401, '客户端未获授权或授权已被撤销，需要重新配对。');
     }
@@ -135,16 +90,28 @@ export async function startServer({
       return { client };
     }
     if (request.method === 'GET' && path === '/v1/credentials') {
-      const credentials = await store.list();
-      return { credentials: await Promise.all(credentials.map(async (credential) => ({ ...credential, digest: await store.digest(credential) }))) };
+      return { credentials: await store.snapshots() };
     }
-    if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download')) {
+    if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download' || path === '/v1/credentials/delete')) {
       try {
         if (path === '/v1/credentials') {
-          return { credential: await store.add(JSON.stringify(body.auth)) };
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
+          const result = await store.add(JSON.stringify(body.auth), body.base);
+          if (result.changed) await recordCommitted(home, '上传', client, { email: result.credential.email });
+          return result;
         }
-        return { auth: parseAuth(await store.get(parseCredential(body))) };
+        const credential = parseCredential(body);
+        if (path === '/v1/credentials/delete') {
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要或 null。');
+          await store.delete(credential, body.base);
+          await recordCommitted(home, '删除', client, { email: credential.email });
+          return { ok: true };
+        }
+        const auth = parseAuth(await store.get(credential));
+        await recordAudit(home, '下载', client, { email: credential.email });
+        return { auth };
       } catch (error) {
+        if (error instanceof ServiceError) throw error;
         if (error instanceof Error && !('code' in error)) {
           throw new HttpError(400, error.message);
         }
@@ -160,17 +127,13 @@ export async function startServer({
     response.setHeader('X-Content-Type-Options', 'nosniff');
     const handle = async (): Promise<void> => {
       const body = request.method === 'POST' ? await readBody(request) : {};
-      const operation = queue.then(async () => {
-        await ready;
-        return await route(request, body);
-      });
-      queue = operation.catch(() => {});
-      response.end(JSON.stringify(await operation));
+      await ready;
+      response.end(JSON.stringify(await route(request, body)));
     };
     void handle().catch((error: unknown) => {
       request.resume();
-      response.statusCode = error instanceof HttpError ? error.status : 500;
-      response.end(JSON.stringify({ error: error instanceof HttpError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。' }));
+      response.statusCode = error instanceof HttpError || error instanceof ServiceError ? error.status : 500;
+      response.end(JSON.stringify({ error: error instanceof HttpError || error instanceof ServiceError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。', ...(error instanceof ServiceError ? error.details : {}) }));
     });
   };
   const server = tls ? createSecureServer(tls, handler) : createServer(handler);

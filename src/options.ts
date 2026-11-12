@@ -1,20 +1,23 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { defaultPort, localUrl, serverUrl } from './protocol.js';
+import { defaultPort, serverUrl } from './protocol.js';
 
-export type AdminAction = 'pair' | 'clients' | 'revoke';
+export type AdminAction = 'pair' | 'clients' | 'revoke' | 'log';
 
 export type Command =
   | { kind: 'help' }
   | { kind: 'client'; home: string; target?: string }
   | { kind: 'serve'; home: string; host: string; port: number; tlsCert?: string; tlsKey?: string }
-  | { kind: 'admin'; home: string; url: string; action: AdminAction; id?: string };
+  | { kind: 'admin'; home: string; action: AdminAction; id?: string; limit?: number };
 
 export const usage = [
-  'codexplus [--server 地址 | --local] [--port 端口] [--home 目录]',
+  'codexplus [--server 地址 | --local] [--home 目录]',
   'codexplus serve [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]',
-  'codexplus serve pair|clients|revoke <客户端ID> [--port 端口 | --server 本机地址] [--home 目录]',
+  'codexplus serve pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]',
+  '',
+  '仅支持 ChatGPT 登录凭证，不接受只有 API key 的文件。',
+  '登录文件：$CODEX_HOME/auth.json；未设置 CODEX_HOME 时使用 ~/.codex/auth.json。',
 ].join('\n');
 
 function resolveHome(value: string | undefined): string {
@@ -39,6 +42,7 @@ export function parseCommand(args: string[]): Command {
     allowPositionals: true,
     options: {
       home: { type: 'string' },
+      limit: { type: 'string' },
       port: { type: 'string' },
       host: { type: 'string' },
       server: { type: 'string' },
@@ -64,9 +68,9 @@ export function parseCommand(args: string[]): Command {
   }
   const [command, action, id, ...rest] = positionals;
   if (command === undefined) {
-    allow('home', 'port', 'server', 'local');
+    allow('home', 'server', 'local');
     const target = values.server !== undefined ? serverUrl(values.server)
-      : values.local || port !== undefined ? localUrl(port ?? defaultPort) : undefined;
+      : values.local ? 'local' : undefined;
     return { kind: 'client', home, ...(target === undefined ? {} : { target }) };
   }
   if (command !== 'serve') {
@@ -81,10 +85,11 @@ export function parseCommand(args: string[]): Command {
     return { kind: 'serve', home, host: values.host ?? '127.0.0.1', port: port ?? defaultPort,
       ...(tlsCert && tlsKey ? { tlsCert, tlsKey } : {}) };
   }
-  if (!['pair', 'clients', 'revoke'].includes(action) || rest.length > 0 || (action === 'revoke') !== (id !== undefined)) {
+  if (!['pair', 'clients', 'revoke', 'log'].includes(action) || rest.length > 0 || (action === 'revoke') !== (id !== undefined)) {
     throw new Error('命令无效，请运行 codexplus --help。');
   }
-  allow('home', 'port', 'server');
-  const url = values.server !== undefined ? serverUrl(values.server, true) : localUrl(port ?? defaultPort);
-  return { kind: 'admin', home, url, action: action as AdminAction, ...(id === undefined ? {} : { id }) };
+  allow('home', ...(action === 'log' ? ['limit'] : []));
+  const limit = values.limit === undefined ? undefined : Number(values.limit);
+  if (limit !== undefined && (!/^\d+$/u.test(values.limit!) || !Number.isSafeInteger(limit) || limit < 1)) throw new Error('--limit 必须为正整数。');
+  return { kind: 'admin', home, action: action as AdminAction, ...(id === undefined ? {} : { id }), ...(limit === undefined ? {} : { limit }) };
 }

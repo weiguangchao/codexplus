@@ -1,21 +1,35 @@
-import { credentialFilename, isRecord } from './auth.js';
+import { authDigest, parseAuth, credentialFilename, isRecord } from './auth.js';
 
 export const defaultPort = 47831;
-export const defaultServerUrl = localUrl(defaultPort);
 
 export interface Credential {
   type: 'codex';
   email: string;
 }
 
+export interface UploadResult {
+  credential: Credential;
+  changed: boolean;
+}
+
 export type CurrentLogin =
   | { status: 'none' }
+  | { status: 'invalid'; reason: string }
   | { status: 'saved'; email: string }
-  | { status: 'stale'; email: string }
+  | { status: 'ahead'; email: string }
+  | { status: 'behind'; email: string }
+  | { status: 'diverged'; email: string }
+  | { status: 'deleted'; email: string }
   | { status: 'unsaved'; email: string | null };
 
+export class PairingCancelled extends Error {
+  constructor() {
+    super('已取消配对，客户端配置未更改。');
+  }
+}
+
 export class ServiceError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -28,10 +42,6 @@ export function parseCredential(value: unknown): Credential {
   return { type: 'codex', email: value.email };
 }
 
-export function localUrl(port: number): string {
-  return `http://127.0.0.1:${port}`;
-}
-
 export function isLoopbackHost(host: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(host);
 }
@@ -40,7 +50,7 @@ export function isLoopbackUrl(url: string): boolean {
   return isLoopbackHost(new URL(url).hostname);
 }
 
-export function serverUrl(value: string, local = false): string {
+export function serverUrl(value: string): string {
   let url: URL;
   try {
     url = new URL(value.trim());
@@ -49,9 +59,6 @@ export function serverUrl(value: string, local = false): string {
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new Error('服务端地址必须是 HTTP(S) 根地址，不能包含密码、路径或查询参数。');
-  }
-  if (local && !isLoopbackHost(url.hostname)) {
-    throw new Error('服务端管理命令仅限本机回环地址。');
   }
   if (url.protocol !== 'https:' && !isLoopbackHost(url.hostname)) {
     throw new Error('远程服务端必须使用 HTTPS，以保护配对码和账户凭证。');
@@ -84,7 +91,12 @@ export async function requestService(url: string, path: string, token?: string, 
   }
   if (!response.ok) {
     throw new ServiceError(response.status,
-      isRecord(result) && typeof result.error === 'string' ? result.error : `服务端请求失败（HTTP ${response.status}）。`);
+      isRecord(result) && typeof result.error === 'string' ? result.error : `服务端请求失败（HTTP ${response.status}）。`, isRecord(result) ? result : {});
   }
   return result;
+}
+
+export function conflict(email: string, content: string | null): ServiceError {
+  const auth = content === null ? null : parseAuth(content);
+  return new ServiceError(409, '服务端凭证与本次上传不同，请确认是否覆盖。', { code: 'conflict', email, digest: content === null ? null : authDigest(content), lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null });
 }

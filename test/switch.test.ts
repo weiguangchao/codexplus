@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { Session } from '../src/client.js';
-import { switchCredential } from '../src/switch.js';
+import { confirmRunningCodex, switchCredential } from '../src/switch.js';
 
 test('有运行中的进程时显示 PID，默认取消且不修改当前凭证', async (context) => {
   const home = await mkdtemp(join(tmpdir(), 'codexplus-switch-'));
@@ -76,4 +76,23 @@ test('检测失败或 Ctrl+C 取消确认时不执行切换', async () => {
     ask: async () => { throw new Error('ExitPromptError'); },
     log: () => {},
   }), /ExitPromptError/u);
+});
+
+test('更新本机登录时，进程确认使用更新文案并说明会改写本机凭证', async () => {
+  const messages: string[] = [];
+  assert.equal(await confirmRunningCodex({
+    action: 'update',
+    findProcesses: async () => [{ pid: 4601, command: 'codex' }],
+    ask: async ({ message, action, default: answer }) => {
+      assert.equal(message, '仍要更新本机登录吗？');
+      assert.equal(action, 'update');
+      return answer;
+    },
+    log: (message) => messages.push(message),
+  }), false);
+  assert.ok(messages.includes('现在更新会改写本机登录文件：'));
+  assert.ok(messages.includes('  ~/.codex/auth.json'));
+  assert.ok(messages.includes('建议先退出 Codex。'));
+  assert.match(messages.at(-1)!, /已取消更新/u);
+  assert.ok(messages.every((message) => !message.includes('切换')));
 });

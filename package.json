@@ -29,8 +29,10 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@inquirer/core": "^12.1.0",
     "@inquirer/figures": "^2.1.0",
-    "@inquirer/prompts": "^8.8.0"
+    "@inquirer/prompts": "^8.8.0",
+    "fast-string-width": "^3.0.2"
   },
   "overrides": {
     "minimatch": "^11.0.1"
