@@ -20,7 +20,7 @@ export async function runServe(command: ServeCommand): Promise<void> {
   const server = await startServer({ home: command.home, host: command.host, port: command.port, ...(tls ? { tls } : {}) });
   console.log([
     `codexplus 服务端已启动：${server.url}（目录 ${command.home}）`,
-    `生成远程配对码：codexplus serve pair --home ${command.home}`,
+    `生成远程配对码：codexplus-server pair --home ${command.home}`,
   ].join('\n'));
   const stop = (): void => { void server.close().catch(() => { process.exitCode = 1; }); };
   process.once('SIGINT', stop);
@@ -31,7 +31,7 @@ export async function runAdmin(command: AdminCommand, log: (message: string) => 
   const home = resolve(command.home);
   const directory = await stat(home).catch(() => null);
   if (!directory?.isDirectory()) {
-    throw new Error(`数据目录不存在或不是目录：${home}，请检查 --home 或先运行 codexplus serve。`);
+    throw new Error(`数据目录不存在或不是目录：${home}，请检查 --home 或先运行 codexplus-server。`);
   }
   const access = new AccessStore(command.home);
   if (command.action === 'log') {

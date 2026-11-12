@@ -14,7 +14,7 @@
   },
   "scripts": {
     "dev": "tsx --conditions=source packages/tui/src/cli.ts --home .codexplus",
-    "dev:server": "tsx --conditions=source packages/tui/src/cli.ts serve --home .codexplus",
+    "dev:server": "tsx --conditions=source packages/app-server/src/cli.ts --home .codexplus",
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",

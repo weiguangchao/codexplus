@@ -16,7 +16,7 @@ for (const action of ['pair', 'clients', 'revoke', 'log'] as const) {
       await assert.rejects(runAdmin({ kind: 'admin', action, home: relative(process.cwd(), home), ...(action === 'revoke' ? { id: 'missing' } : {}) }, (message) => messages.push(message)), (error) => {
         assert.ok(error instanceof Error);
         assert.ok(error.message.includes(resolve(home)));
-        assert.match(error.message, /检查 --home 或先运行 codexplus serve/u);
+        assert.match(error.message, /检查 --home 或先运行 codexplus-server/u);
         return true;
       });
       assert.deepEqual(messages, []);

@@ -298,7 +298,7 @@ export class CredentialClient {
 
   private async manualPair(url: string, askPairing: ConnectOptions['askPairing'], retryPairing: ConnectOptions['retryPairing']): Promise<ServerEntry> {
     if (!askPairing) {
-      throw new Error(`${url} 需要配对码，请在服务端运行 codexplus serve pair 生成。`);
+      throw new Error(`${url} 需要配对码，请在服务端运行 codexplus-server pair 生成。`);
     }
     for (;;) {
       const { code, name } = await askPairing(url);

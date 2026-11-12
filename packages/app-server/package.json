@@ -18,6 +18,9 @@
   "files": [
     "dist"
   ],
+  "bin": {
+    "codexplus-server": "dist/cli.js"
+  },
   "dependencies": {
     "@codexplus/shared": "0.1.0"
   }

@@ -4,7 +4,6 @@ import { styleText } from 'node:util';
 import { isRecord, PairingCancelled } from '@codexplus/shared';
 import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
-import { runAdmin, runServe } from '@codexplus/app-server';
 import { menu } from './flows.js';
 import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel, retryPairing } from './prompts.js';
 import { cancelled, line, renderTitle, report, symbols } from './ui.js';
@@ -22,14 +21,6 @@ async function main(): Promise<void> {
   const command = parseCommand(process.argv.slice(2));
   if (command.kind === 'help') {
     console.log(usage);
-    return;
-  }
-  if (command.kind === 'serve') {
-    await runServe(command);
-    return;
-  }
-  if (command.kind === 'admin') {
-    await runAdmin(command);
     return;
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {

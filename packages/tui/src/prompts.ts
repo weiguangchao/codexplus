@@ -56,7 +56,7 @@ export async function askRepair(url: string): Promise<boolean> {
     message: '要与这个服务端重新配对吗？',
     choices: [
       { value: false, name: '取消', description: '退出，客户端配置不变' },
-      { value: true, name: '重新配对', description: '需要在该服务端运行 codexplus serve pair 获取配对码' },
+      { value: true, name: '重新配对', description: '需要在该服务端运行 codexplus-server pair 获取配对码' },
     ],
     default: false,
     theme: selectTheme('取消'),
@@ -78,7 +78,7 @@ export async function confirmRestore(email: string | null): Promise<boolean> {
 }
 
 export async function askPairing(url: string) {
-  report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus serve pair 获取配对码');
+  report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus-server pair 获取配对码');
   const code = await escapable((context) => password({ message: '服务端生成的配对码 (esc 取消)', mask: true, theme: inputTheme,
     validate: (value) => Boolean(value.trim()) || '请输入配对码。' }, context));
   if (code === BACK) throw new PairingCancelled();
