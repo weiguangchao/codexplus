@@ -168,13 +168,20 @@ export class Session {
       throw new Error('请输入 auth.json 文件路径。');
     }
     const content = await readFile(expandPath(this.userHome, sourcePath), 'utf8');
+    return await this.uploadAuth(content, expandPath(this.userHome, sourcePath) === this.codexAuthPath, confirmedBase, upload);
+  }
+
+  async addAuth(content: string, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
+    return await this.uploadAuth(content, false, undefined, upload);
+  }
+
+  private async uploadAuth(content: string, currentFile: boolean, confirmedBase: string | null | undefined, upload: (task: () => Promise<unknown>) => Promise<unknown>): Promise<UploadResult> {
     const auth = parseAuth(content);
     const restoring = this.deletedEmail(content);
     const unknownRestoration = this.deleted.size > 0 && idTokenEmail(content) === null;
     if ((restoring !== null || unknownRestoration) && !await this.confirmRestore?.(restoring)) {
       throw new UploadCancelled('已取消，账号未重新保存。');
     }
-    const currentFile = expandPath(this.userHome, sourcePath) === this.codexAuthPath;
     const baseline = (await this.owner?.config())?.baseline;
     const email = idTokenEmail(content);
     let base = confirmedBase === undefined ? currentFile && baseline?.server === this.server && baseline.email === email ? baseline.digest : null : confirmedBase;
