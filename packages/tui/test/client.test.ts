@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { authDigest } from '@codexplus/shared';
 import { UploadCancelled } from '../src/client.js';
-import { admin, filtered, makeClient, original, pairCode, standalone, temporaryHome } from './helpers.js';
-
-function never(): Promise<never> { return Promise.reject(new Error('不应请求配对码。')); }
+import { filtered, makeClient, original, standalone, temporaryHome } from './helpers.js';
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8'));
@@ -19,65 +18,20 @@ test('两个本机客户端使用独立端口，退出一个不影响另一个',
   context.after(() => second.close());
   assert.equal(started.length, 2);
   assert.notEqual(first.url, second.url);
+  assert.equal((await fetch(`${first.url}/v1/health`)).status, 200);
+  assert.equal((await fetch(`${first.url}/v1/credentials`)).status, 401);
+  assert.equal((await fetch(`${second.url}/v1/credentials`, { headers: { Authorization: 'Bearer invalid-session' } })).status, 401);
   await first.close();
   assert.deepEqual(await second.list(), []);
-  assert.equal((await client.config()).current, 'local');
-  assert.deepEqual((await client.config()).servers, {});
-  const access = JSON.parse(await readFile(join(client.home, 'server-access.json'), 'utf8')) as { clients: unknown[] };
-  assert.equal(access.clients.length, 0);
-});
-
-test('连接过的服务端全部保存并记住当前连接，不同目录的服务端需要手动配对', async (context) => {
-  const userHome = await temporaryHome(context);
-  const homeA = await temporaryHome(context);
-  const homeB = await temporaryHome(context);
-  const serverA = await standalone(context, homeA);
-  const serverB = await standalone(context, homeB);
-  const { client } = makeClient(context, userHome);
-  const logs: string[] = [];
-  const ask = (home: string) => async (url: string) => ({ code: await pairCode(url, home), name: '笔记本' });
-  await (await client.connect({ target: serverA.url, askPairing: ask(homeA), log: (message) => logs.push(message) })).close();
-
-  await (await client.connect({ target: serverB.url, askPairing: ask(homeB), log: () => {} })).close();
-  const config = await client.config();
-  assert.equal(config.current, serverB.url);
-  assert.deepEqual(Object.keys(config.servers).toSorted(), [serverA.url, serverB.url].toSorted());
-  assert.ok(config.servers[serverA.url]?.token);
-  const remembered = await client.connect({ askPairing: never, log: () => {} });
-  assert.equal(remembered.url, serverB.url);
-  await remembered.close();
-  await (await client.connect({ target: serverA.url, askPairing: never, log: () => {} })).close();
-  assert.equal((await client.config()).current, serverA.url);
-  const clients = await admin(serverA.url, homeA, 'clients') as { clients: { name: string }[] };
-  assert.deepEqual(clients.clients.map((entry) => entry.name), ['笔记本']);
-});
-
-test('授权被撤销后提示重新配对并替换令牌，配对失败不改变客户端配置', async (context) => {
-  const userHome = await temporaryHome(context);
-  const serverHome = await temporaryHome(context);
-  const server = await standalone(context, serverHome);
-  const { client } = makeClient(context, userHome);
-  await (await client.connect({ target: server.url, log: () => {},
-    askPairing: async (url) => ({ code: await pairCode(url, serverHome), name: '旧' }) })).close();
-  const before = await readFile(client.configPath, 'utf8');
-  const old = (await client.config()).servers[server.url];
-  assert.ok(old);
-  await admin(server.url, serverHome, 'revoke', { id: old.clientId });
-  await assert.rejects(client.connect({ target: server.url, log: () => {},
-    askPairing: async () => ({ code: 'bad-code', name: '失败' }) }), /配对失败/u);
-  assert.equal(await readFile(client.configPath, 'utf8'), before);
-  const logs: string[] = [];
-  await (await client.connect({ target: server.url, log: (message) => logs.push(message),
-    askPairing: async (url) => ({ code: await pairCode(url, serverHome), name: '新' }) })).close();
-  assert.match(logs.join('\n'), /已失效或已被撤销/u);
-  assert.notEqual((await client.config()).servers[server.url]?.clientId, old.clientId);
+  assert.deepEqual(await client.config(), { version: 3, baseline: null });
+  await assert.rejects(stat(join(client.home, 'server-access.json')), { code: 'ENOENT' });
 });
 
 test('自定义 HOME 时本地服务端写入客户端指定目录，~/ 输入与切换目标仍使用用户主目录', async (context) => {
   const userHome = await temporaryHome(context);
   const home = join(userHome, 'custom home');
   const { client } = makeClient(context, userHome, home);
-  const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
+  const session = await client.connect({ log: () => {} });
   await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
   const { credential } = await session.add('~/input.json');
   await session.switch(credential);
@@ -93,7 +47,7 @@ test('损坏的客户端配置不会被覆盖，也不会连接服务端', async
   const { client, started } = makeClient(context, userHome);
   await mkdir(client.home, { recursive: true });
   await writeFile(client.configPath, '{broken');
-  await assert.rejects(client.connect({ target: 'local', askPairing: never, log: () => {} }), /格式无效.*未被覆盖/u);
+  await assert.rejects(client.connect({ log: () => {} }), /格式无效.*未被覆盖/u);
   assert.equal(await readFile(client.configPath, 'utf8'), '{broken');
   assert.deepEqual(started, []);
 });
@@ -101,7 +55,7 @@ test('损坏的客户端配置不会被覆盖，也不会连接服务端', async
 test('服务端凭证损坏、选项不存在或本地输入无效时，不覆盖客户端当前登录', async (context) => {
   const userHome = await temporaryHome(context);
   const { client } = makeClient(context, userHome);
-  const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
+  const session = await client.connect({ log: () => {} });
   context.after(() => session.close());
   await assert.rejects(session.add(''), /文件路径/u);
   await assert.rejects(session.add(join(userHome, 'missing.json')), { code: 'ENOENT' });
@@ -121,7 +75,7 @@ test('服务端凭证损坏、选项不存在或本地输入无效时，不覆�
 test('Unix 上客户端和服务端的敏感文件权限为 0600，目录为 0700', { skip: process.platform === 'win32' }, async (context) => {
   const userHome = await temporaryHome(context);
   const { client } = makeClient(context, userHome);
-  const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
+  const session = await client.connect({ log: () => {} });
   await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
   await session.switch((await session.add(join(userHome, 'input.json'))).credential);
   await session.close();
@@ -141,7 +95,7 @@ function idToken(email: string): string {
 test('识别当前登录：与服务端快照一致、仅邮箱一致且没有基线（不一致）、未保存和未登录，不下载凭证', async (context) => {
   const userHome = await temporaryHome(context);
   const { client } = makeClient(context, userHome);
-  const session = await client.connect({ target: 'local', askPairing: never, log: () => {} });
+  const session = await client.connect({ log: () => {} });
   context.after(() => session.close());
   assert.deepEqual(await session.current(), { status: 'none' });
   const source = join(userHome, 'input.json');
@@ -170,8 +124,8 @@ test('其他客户端更新同一账号后，当前登录状态立即变为服�
   const userHome = await temporaryHome(context);
   const server = await standalone(context, join(userHome, '.codexplus'));
   const { client } = makeClient(context, userHome);
-  const first = await client.connect({ target: server.url, askPairing: async () => ({ code: await pairCode(server.url, join(userHome, '.codexplus')), name: '测试' }), log: () => {} });
-  const second = await client.connect({ askPairing: never, log: () => {} });
+  const first = await client.connect({ port: Number(new URL(server.url).port), log: () => {} });
+  const second = await client.connect({ port: Number(new URL(server.url).port), log: () => {} });
   context.after(async () => { await first.close(); await second.close(); });
   const login = JSON.stringify({ tokens: { access_token: 'v1', id_token: idToken('person@example.com') }, last_refresh: '2026-11-01T00:00:00Z' });
   await writeFile(join(userHome, 'v1.json'), login);
@@ -185,60 +139,6 @@ test('其他客户端更新同一账号后，当前登录状态立即变为服�
   second.confirmUpload = async () => true;
   await second.add(join(userHome, 'v2.json'));
   assert.deepEqual(await first.current(), { status: 'behind', email: 'person@example.com' });
-});
-
-test('手动配对的回环服务端离线不启动空库，恢复后保留授权', async (context) => {
-  const userHome = await temporaryHome(context);
-  const serverHome = await temporaryHome(context);
-  const server = await standalone(context, serverHome);
-  const url = server.url;
-  const { client, started } = makeClient(context, userHome);
-  await (await client.connect({ target: url, askPairing: async () => ({ code: await pairCode(url, serverHome), name: '测试' }) })).close();
-  const before = await readFile(client.configPath, 'utf8');
-  await server.close();
-  await assert.rejects(client.connect(), /无法连接/u);
-  assert.equal(await readFile(client.configPath, 'utf8'), before);
-  assert.deepEqual(started, []);
-  await standalone(context, serverHome, Number(new URL(url).port));
-  await (await client.connect({ askPairing: never })).close();
-});
-
-test('版本一迁移丢弃自动配对，保留手动配对和相应基线', async (context) => {
-  const userHome = await temporaryHome(context);
-  const { client } = makeClient(context, userHome);
-  await mkdir(client.home);
-  const token = 'a'.repeat(43);
-  const local = 'http://127.0.0.1:47831';
-  const remote = 'https://example.com';
-  for (const current of [local, 'http://localhost:1234', remote]) {
-    await writeFile(client.configPath, JSON.stringify({ version: 1, current, servers: {
-      [local]: { token, clientId: 'old', pairing: 'local' }, [remote]: { token, clientId: 'keep', pairing: 'code' },
-    }, baseline: { server: local, email: 'person@example.com', digest: 'old' } }));
-    const config = await client.config();
-    assert.equal(config.version, 2);
-    assert.equal(config.current, current === remote ? remote : 'local');
-    assert.deepEqual(Object.keys(config.servers), [remote]);
-    assert.equal(config.baseline, null);
-  }
-});
-
-test('同地址换库先确认实例，不发送旧令牌，确认后重新配对', async (context) => {
-  const userHome = await temporaryHome(context);
-  const firstHome = await temporaryHome(context);
-  const nextHome = await temporaryHome(context);
-  const first = await standalone(context, firstHome);
-  const { client } = makeClient(context, userHome);
-  await (await client.connect({ target: first.url, askPairing: async () => ({ code: await pairCode(first.url, firstHome), name: '旧' }) })).close();
-  const before = await readFile(client.configPath, 'utf8');
-  await first.close();
-  const next = await standalone(context, nextHome, Number(new URL(first.url).port));
-  await assert.rejects(client.connect(), /不是之前配对/u);
-  assert.equal(await readFile(client.configPath, 'utf8'), before);
-  await assert.rejects(client.connect({ askRepair: async () => false }), /不是之前配对/u);
-  assert.equal(await readFile(client.configPath, 'utf8'), before);
-  await (await client.connect({ askRepair: async () => true, askPairing: async () => ({ code: await pairCode(next.url, nextHome), name: '新' }) })).close();
-  assert.notEqual((await client.config()).servers[next.url]?.serverId, JSON.parse(before).servers[next.url].serverId);
-  assert.equal((await client.config()).baseline, null);
 });
 
 test('基线区分本机领先、服务端领先和分歧，旧快照必须确认才能覆盖', async (context) => {
@@ -295,4 +195,61 @@ test('确认期间再次上传产生新冲突时再次询问，不使用强制�
   };
   await session.add(source);
   assert.equal(asked, 2);
+});
+
+test('通过本机端口连接独立服务端，关闭客户端不停止服务端，也不记住连接', async (context) => {
+  const userHome = await temporaryHome(context);
+  const home = await temporaryHome(context);
+  const server = await standalone(context, home);
+  const { client, started } = makeClient(context, userHome);
+  const session = await client.connect({ port: Number(new URL(server.url).port) });
+  assert.equal(session.url, server.url);
+  await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
+  const { credential } = await session.add(join(userHome, 'input.json'));
+  await session.switch(credential);
+  await session.close();
+  assert.deepEqual(started, []);
+  assert.equal((await fetch(`${server.url}/v1/health`)).status, 200);
+  assert.deepEqual(await readJson(join(userHome, '.codex', 'auth.json')), filtered);
+  assert.deepEqual(await client.config(), { version: 3, baseline: { server: server.url, email: credential.email, digest: authDigest(JSON.stringify(filtered)) } });
+  const local = await client.connect();
+  assert.notEqual(local.url, server.url);
+  assert.deepEqual(await local.list(), []);
+  assert.equal(started.length, 1);
+  await local.close();
+});
+
+test('显式本机端口离线时报错，不启动空库或改写配置，重启后可重连', async (context) => {
+  const userHome = await temporaryHome(context);
+  const home = await temporaryHome(context);
+  const server = await standalone(context, home);
+  const port = Number(new URL(server.url).port);
+  const { client, started } = makeClient(context, userHome);
+  await (await client.connect({ port })).close();
+  const before = await readFile(client.configPath, 'utf8');
+  await server.close();
+  await assert.rejects(client.connect({ port }), /无法连接/u);
+  assert.equal(await readFile(client.configPath, 'utf8'), before);
+  assert.deepEqual(started, []);
+  await standalone(context, home, port);
+  await (await client.connect({ port })).close();
+});
+
+test('旧客户端配置迁移删除所有连接和令牌，只保留本机基线', async (context) => {
+  const userHome = await temporaryHome(context);
+  const { client } = makeClient(context, userHome);
+  await mkdir(client.home);
+  const remote = 'https://example.com';
+  for (const version of [1, 2]) {
+    for (const server of ['local', 'http://127.0.0.1:47831', remote]) {
+      const baseline = { server, email: 'person@example.com', digest: 'baseline' };
+      await writeFile(client.configPath, JSON.stringify({ version, current: remote, servers: { [remote]: { token: 'old-secret', clientId: 'old' } }, baseline }));
+      const expected = { version: 3, baseline: server === 'local' ? baseline : null };
+      assert.deepEqual(await client.config(), expected);
+      const session = await client.connect();
+      await session.close();
+      assert.deepEqual(await readJson(client.configPath), expected);
+      assert.doesNotMatch(await readFile(client.configPath, 'utf8'), /old-secret|https:\/\/example.com|servers|current/u);
+    }
+  }
 });

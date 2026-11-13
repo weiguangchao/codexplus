@@ -4,21 +4,19 @@ import { readOptional, writeAtomic, withLock } from '@codexplus/shared';
 
 export interface AuditEntry {
   time: string;
-  event: '下载' | '上传' | '删除' | '配对' | '撤销';
+  event: '下载' | '上传' | '删除';
   clientId: string;
   clientName: string;
   email?: string;
-  target?: { id: string; name: string };
 }
 
 type Actor = { id: string; name: string };
 
-export async function recordAudit(home: string, event: AuditEntry['event'], client: Actor, subject: { email?: string; target?: Actor } = {}): Promise<void> {
+export async function recordAudit(home: string, event: AuditEntry['event'], client: Actor, subject: { email?: string } = {}): Promise<void> {
   await withLock(home, async () => {
     const path = join(home, 'audit.log');
     const entry: AuditEntry = { time: new Date().toISOString(), event, clientId: client.id, clientName: client.name,
-      ...(subject.email ? { email: subject.email } : {}),
-      ...(subject.target ? { target: { id: subject.target.id, name: subject.target.name } } : {}) };
+      ...(subject.email ? { email: subject.email } : {}) };
     await appendFile(path, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
     const lines = (await readOptional(path))!.trim().split('\n');
     if (lines.length > 1000) await writeAtomic(path, `${lines.slice(-1000).join('\n')}\n`);

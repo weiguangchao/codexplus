@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { CredentialStore } from '@codexplus/app-server';
 import { authDigest } from '@codexplus/shared';
-import { CredentialClient } from '../src/client.js';
-import { pairCode, standalone, temporaryHome } from './helpers.js';
+import { standalone, temporaryHome } from './helpers.js';
 
 const first = 'a@example.com';
 const second = 'b@example.com';
@@ -45,7 +44,7 @@ async function run(root: string, args: string[], running = false): Promise<{ cod
 test('status 和 list 在无 TTY 的真实 CLI 中输出状态和排序列表，不改写登录或输出凭证', async (context) => {
   const root = await temporaryHome(context);
   const home = join(root, 'vault');
-  const empty = await run(root, ['list', '--local']);
+  const empty = await run(root, ['list']);
   assert.equal(empty.code, 0, empty.stderr);
   assert.match(empty.stdout, /暂无已保存的账号/u);
   await save(home, second);
@@ -86,37 +85,35 @@ test('status 区分未登录、无效文件和未保存，list 仍显示损坏�
   assert.equal(list.stdout, `${second}  凭证文件缺失或损坏\n`);
 });
 
-test('已配对的远程 status 和 list 支持无 TTY，服务中断时返回连接错误', async (context) => {
+test('独立本机服务端的 status 和 list 支持无 TTY，服务中断时返回连接错误', async (context) => {
   const root = await temporaryHome(context);
   const serverHome = await temporaryHome(context);
   await save(serverHome, first);
   const server = await standalone(context, serverHome);
-  const client = new CredentialClient({ home: join(root, 'vault'), codexHome: join(root, 'codex') });
-  const session = await client.connect({ target: server.url, askPairing: async () => ({ code: await pairCode(server.url, serverHome), name: 'CLI test' }) });
-  await session.close();
+  const port = new URL(server.url).port;
   await login(root, auth(first));
-  const status = await run(root, ['status', '--server', server.url]);
+  const status = await run(root, ['status', '--port', port]);
   assert.equal(status.code, 0, status.stderr);
-  assert.ok(status.stdout.includes(`运行模式  远程模式\n服务地址  ${server.url}`));
-  const list = await run(root, ['list']);
+  assert.ok(status.stdout.includes(`运行模式  本地模式\n服务地址  ${server.url}`));
+  const list = await run(root, ['list', '--port', port]);
   assert.equal(list.code, 0, list.stderr);
   assert.equal(list.stdout, `${first}  ← 当前\n`);
   await server.close();
   for (const command of ['status', 'list']) {
-    const failed = await run(root, [command]);
+    const failed = await run(root, [command, '--port', port]);
     assert.equal(failed.code, 1);
     assert.equal(failed.stdout, '');
-    assert.match(failed.stderr, /无法连接 codexplus 服务端/u);
+    assert.match(failed.stderr, /无法连接 codexplus 本机服务端/u);
   }
 });
 
-test('首次远程配对在无 TTY 时明确报错，不写入客户端配置', async (context) => {
+test('旧远程入口在真实 CLI 中直接报错，不写入客户端配置', async (context) => {
   const root = await temporaryHome(context);
   const server = await standalone(context, await temporaryHome(context));
   const result = await run(root, ['list', '--server', server.url]);
   assert.equal(result.code, 1);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /需要配对.*交互式终端/u);
+  assert.match(result.stderr, /--server 不能用于此命令/u);
   await assert.rejects(readFile(join(root, 'vault', 'client.json')), { code: 'ENOENT' });
 });
 
@@ -126,7 +123,7 @@ test('指定账号切换复用实际下载写入和同步基线，不进入菜�
   await save(home, first);
   await save(home, second);
   await login(root, auth(first));
-  const result = await run(root, ['switch', second, '--local']);
+  const result = await run(root, ['switch', second]);
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /已切换到 b@example.com/u);
   assert.doesNotMatch(result.stdout, /要做什么|fake-access/u);

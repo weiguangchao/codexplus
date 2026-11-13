@@ -4,7 +4,7 @@ import { startServer } from '@codexplus/app-server';
 import { CredentialClient } from '../src/client.js';
 import { account } from '../../app-server/test/helpers.js';
 
-export { account, admin, pairCode, standalone, temporaryHome } from '../../app-server/test/helpers.js';
+export { account, standalone, temporaryHome } from '../../app-server/test/helpers.js';
 
 export const original = { tokens: { access_token: 'fake-access', refresh_token: 'fake-refresh', extra: 'discard' }, extra: 'discard' };
 export const filtered = { tokens: { access_token: 'fake-access', refresh_token: 'fake-refresh' } };

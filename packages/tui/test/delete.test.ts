@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { AccessStore, readAudit, CredentialStore } from '@codexplus/app-server';
+import { readAudit, CredentialStore } from '@codexplus/app-server';
 import { requestService, ServiceError } from '@codexplus/shared';
 import { deleteChoices } from '../src/ui.js';
 import { account, makeClient, standalone, temporaryHome } from './helpers.js';
@@ -11,21 +11,21 @@ for (const broken of [null, '{broken', '{"tokens":{}}']) {
   test(`不可读快照可用 null 删除，字符串摘要冲突（${String(broken)}）`, async (context) => {
     const home = await temporaryHome(context);
     const server = await standalone(context, home);
-    const { token } = await new AccessStore(home).addClient('测试');
+
     const store = new CredentialStore({ home, request: account });
     const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
     const base = await store.digest(credential);
     const path = join(store.credentialsPath, 'codex-person@example.com', 'auth.json');
     if (broken === null) await rm(path);
     else await writeFile(path, broken);
-    await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, { ...credential, base }), (error) => {
+    await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, base }), (error) => {
       assert.ok(error instanceof ServiceError);
       assert.equal(error.status, 409);
       assert.equal(error.details.digest, null);
       assert.equal(error.details.lastRefresh, null);
       return true;
     });
-    await requestService(server.url, '/v1/credentials/delete', token, { ...credential, base: null });
+    await requestService(server.url, '/v1/credentials/delete', { ...credential, base: null });
     assert.deepEqual(await store.list(), []);
     assert.deepEqual(JSON.parse(await readFile(store.configPath, 'utf8')).credentials, []);
     assert.deepEqual(await readdir(store.credentialsPath), []);
@@ -36,18 +36,18 @@ for (const broken of [null, '{broken', '{"tokens":{}}']) {
 test('健康快照拒绝 null，删除请求必须提供 base，未注册账号报未找到', async (context) => {
   const home = await temporaryHome(context);
   const server = await standalone(context, home);
-  const { token } = await new AccessStore(home).addClient('测试');
+
   const store = new CredentialStore({ home, request: account });
   const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
   const awaitDigest = await store.digest(credential);
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, { ...credential, base: null }), (error) => {
+  await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, base: null }), (error) => {
     assert.ok(error instanceof ServiceError);
     assert.equal(error.status, 409);
     assert.equal(error.details.digest, awaitDigest);
     return true;
   });
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, credential), (error) => error instanceof ServiceError && error.status === 400);
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, { ...credential, email: 'missing@example.com', base: null }), /未找到/u);
+  await assert.rejects(requestService(server.url, '/v1/credentials/delete', credential), (error) => error instanceof ServiceError && error.status === 400);
+  await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, email: 'missing@example.com', base: null }), /未找到/u);
   assert.equal((await store.list()).length, 1);
 });
 

@@ -6,11 +6,10 @@ import {
   expandPath,
   readOptional,
   writeAtomic,
-  isLoopbackUrl,
-  PairingCancelled,
   parseCredential,
   requestService,
-  serverUrl,
+  parsePort,
+  protocolVersion,
   ServiceError,
 } from '@codexplus/shared';
 import { readFile } from 'node:fs/promises';
@@ -22,51 +21,17 @@ import { syncCodexBar } from './codexbar.js';
 import type { Credential, CurrentLogin, UploadResult } from '@codexplus/shared';
 import { startServer } from '@codexplus/app-server';
 
-export interface ServerEntry {
-  token: string;
-  clientId: string;
-  serverId?: string;
-}
-
 export interface ClientConfig {
-  version: 2;
-  current: string;
-  servers: Record<string, ServerEntry>;
+  version: 3;
   baseline: { server: string; email: string; digest: string } | null;
 }
 
-export interface Pairing {
-  code: string;
-  name: string;
-}
-
 export interface ConnectOptions {
-  target?: string;
-  askRepair?: (url: string) => Promise<boolean>;
-  askPairing?: (url: string) => Promise<Pairing>;
-  retryPairing?: (message: string) => Promise<boolean>;
+  port?: number;
   log?: (message: string) => void;
 }
 
-type StartLocal = (options: { home: string; host: string; port: number; sessionToken: string }) => Promise<{ url: string; close(): Promise<void> }>;
-
-const tokenPattern = /^[A-Za-z0-9_-]{43}$/u;
-
-function parseEntry(value: unknown): ServerEntry {
-  if (!isRecord(value) || typeof value.token !== 'string' || !tokenPattern.test(value.token) ||
-    typeof value.clientId !== 'string' || !value.clientId) {
-    throw new Error();
-  }
-  return { token: value.token, clientId: value.clientId, ...(typeof value.serverId === 'string' ? { serverId: value.serverId } : {}) };
-}
-
-function parsePairResult(result: unknown): ServerEntry {
-  if (!isRecord(result) || typeof result.token !== 'string' || !tokenPattern.test(result.token) ||
-    !isRecord(result.client) || typeof result.client.id !== 'string' || !result.client.id) {
-    throw new Error('服务端配对响应格式无效，未保存客户端配置。');
-  }
-  return { token: result.token, clientId: result.client.id };
-}
+type StartLocal = (options: { home: string; port: number; sessionToken: string }) => Promise<{ url: string; close(): Promise<void> }>;
 
 export class UploadCancelled extends Error {
   constructor(message = '已取消，服务端保存的版本未更改。') {
@@ -83,19 +48,19 @@ export class Session {
 
   constructor(
     readonly url: string,
-    private readonly token: string,
     readonly userHome: string,
     readonly codexAuthPath: string,
     private readonly stop: () => Promise<void>,
     private readonly owner?: CredentialClient,
     readonly server = url,
     private readonly log: (message: string) => void = console.log,
+    private readonly sessionToken?: string,
   ) {}
 
   get home(): string { return this.owner?.home ?? this.userHome; }
 
   private async request(path: string, body?: unknown): Promise<unknown> {
-    return await requestService(this.url, path, this.token, body);
+    return await requestService(this.url, path, body, this.sessionToken);
   }
 
   async list(): Promise<Credential[]> {
@@ -263,22 +228,21 @@ export class CredentialClient {
 
   async config(): Promise<ClientConfig> {
     const content = await readOptional(this.configPath);
-    if (content === null) return { version: 2, current: 'local', servers: {}, baseline: null };
+    if (content === null) return { version: 3, baseline: null };
     try {
       const value: unknown = JSON.parse(content);
-      if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || typeof value.current !== 'string' || !isRecord(value.servers)) throw new Error();
-      const servers: Record<string, ServerEntry> = {};
-      const discarded = new Set<string>();
-      for (const [url, entry] of Object.entries(value.servers)) {
-        if (value.version === 1 && isRecord(entry) && entry.pairing === 'local') { discarded.add(url); continue; }
-        servers[serverUrl(url)] = parseEntry(entry);
+      if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3)) throw new Error();
+      if (value.version !== 3 && (typeof value.current !== 'string' || !isRecord(value.servers))) throw new Error();
+      let baseline: ClientConfig['baseline'] = null;
+      if (isRecord(value.baseline) && typeof value.baseline.server === 'string' && typeof value.baseline.email === 'string' && typeof value.baseline.digest === 'string') {
+        const { server, email, digest } = value.baseline;
+        if (server === 'local' || value.version === 3 && /^http:\/\/127\.0\.0\.1:\d+$/u.test(server) && parsePort(server.slice('http://127.0.0.1:'.length))) {
+          baseline = { server, email, digest };
+        }
       }
-      const current = value.current === 'local' || discarded.has(value.current) || value.version === 1 && !servers[value.current] && isLoopbackUrl(value.current) ? 'local' : serverUrl(value.current);
-      let baseline: ClientConfig['baseline'] = isRecord(value.baseline) && typeof value.baseline.server === 'string' && typeof value.baseline.email === 'string' && typeof value.baseline.digest === 'string' ? value.baseline as unknown as ClientConfig['baseline'] : null;
-      if (value.version === 1 && baseline && !servers[baseline.server]) baseline = null;
-      return { version: 2, current, servers, baseline };
+      return { version: 3, baseline };
     } catch {
-      throw new Error(`${this.configPath} 格式无效，请修复或删除该文件后重新配对；已有文件未被覆盖。`);
+      throw new Error(`${this.configPath} 格式无效，请修复或删除该文件；已有文件未被覆盖。`);
     }
   }
 
@@ -289,80 +253,31 @@ export class CredentialClient {
     });
   }
 
-  private async checkService(url: string): Promise<string> {
+  private async checkService(url: string): Promise<void> {
     let result: unknown;
     try { result = await requestService(url, '/v1/health'); } catch (error) {
       if (error instanceof ServiceError) throw new Error(`${url} 上运行的不是 codexplus 服务端。`, { cause: error });
       throw error;
     }
     if (!isRecord(result) || result.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
-    if (result.version !== 2) throw new Error('版本不兼容，请把两端升级到同一版本。');
-    if (typeof result.id !== 'string' || !result.id) throw new Error('服务端实例信息无效。');
-    return result.id;
+    if (result.version !== protocolVersion) throw new Error('版本不兼容，请把两端升级到同一版本。');
   }
 
-  private async valid(url: string, token: string): Promise<boolean> {
+  async connect({ port, log = console.log }: ConnectOptions = {}): Promise<Session> {
+    await this.config();
+    if (port !== undefined) parsePort(String(port));
+    const sessionToken = port === undefined ? randomBytes(32).toString('base64url') : undefined;
+    const embedded = sessionToken === undefined ? null : await this.startLocal({ home: this.home, port: 0, sessionToken });
+    const url = embedded?.url ?? `http://127.0.0.1:${port}`;
     try {
-      await requestService(url, '/v1/session', token);
-      return true;
+      await this.checkService(url);
+      await withLock(this.home, async () => {
+        await writeAtomic(this.configPath, `${JSON.stringify(await this.config(), null, 2)}\n`);
+      });
+      return new Session(url, this.userHome, this.codexAuthPath, async () => { await embedded?.close(); }, this, embedded ? 'local' : url, log, sessionToken);
     } catch (error) {
-      if (error instanceof ServiceError && error.status === 401) {
-        return false;
-      }
+      await embedded?.close();
       throw error;
     }
-  }
-
-  private async manualPair(url: string, askPairing: ConnectOptions['askPairing'], retryPairing: ConnectOptions['retryPairing']): Promise<ServerEntry> {
-    if (!askPairing) {
-      throw new Error(`${url} 需要配对码，请在服务端运行 codexplus-server pair 生成。`);
-    }
-    for (;;) {
-      const { code, name } = await askPairing(url);
-      try {
-        return parsePairResult(await requestService(url, '/v1/pair', undefined, { code: code.trim(), name: name.trim() }));
-      } catch (error) {
-        if (!(error instanceof ServiceError) || error.status !== 400 || !retryPairing) throw error;
-        if (!await retryPairing(error.message)) throw new PairingCancelled();
-      }
-    }
-  }
-
-  async connect({ target, askPairing, askRepair, retryPairing, log = console.log }: ConnectOptions = {}): Promise<Session> {
-    const config = await this.config();
-    const server = target ?? config.current;
-    if (server === 'local') {
-      const token = randomBytes(32).toString('base64url');
-      const embedded = await this.startLocal({ home: this.home, host: '127.0.0.1', port: 0, sessionToken: token });
-      try {
-        await withLock(this.home, async () => {
-          const latest = await this.config();
-          await writeAtomic(this.configPath, `${JSON.stringify({ ...latest, current: 'local' }, null, 2)}\n`);
-        });
-        return new Session(embedded.url, token, this.userHome, this.codexAuthPath, () => embedded.close(), this, server, log);
-      } catch (error) { await embedded.close(); throw error; }
-    }
-    const url = serverUrl(server);
-    const id = await this.checkService(url);
-    let replaced = false;
-    let entry = config.servers[url];
-    if (entry?.serverId && entry.serverId !== id) {
-      if (!await askRepair?.(url)) {
-        throw new Error(`${url} 上的服务端不是之前配对的那个，未发送已保存的令牌，客户端配置未更改。`);
-      }
-      entry = undefined;
-      replaced = true;
-    }
-    if (entry && !await this.valid(url, entry.token)) {
-      log(`${url} 的授权已失效或已被撤销，需要重新配对。`);
-      entry = undefined;
-    }
-    entry ??= await this.manualPair(url, askPairing, retryPairing);
-    entry = { ...entry, serverId: id };
-    await withLock(this.home, async () => {
-      const latest = await this.config();
-      await writeAtomic(this.configPath, `${JSON.stringify({ ...latest, current: url, baseline: replaced ? null : latest.baseline, servers: { ...latest.servers, [url]: entry } }, null, 2)}\n`);
-    });
-    return new Session(url, entry.token, this.userHome, this.codexAuthPath, async () => {}, this, server);
   }
 }

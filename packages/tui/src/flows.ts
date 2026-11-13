@@ -398,7 +398,7 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
 }
 
 export async function menu(store: Session): Promise<void> {
-  console.log(`${styleText('dim', '运行模式')}  ${store.server === 'local' ? '本地模式' : '远程模式'}`);
+  console.log(`${styleText('dim', '运行模式')}  本地模式`);
   if (store.server === 'local') {
     console.log(pathLabel(styleText('dim', '数据目录'), store.home));
   } else console.log(pathLabel(styleText('dim', '服务地址'), store.url));

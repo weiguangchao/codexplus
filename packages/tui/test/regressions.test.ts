@@ -3,55 +3,15 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { CredentialClient } from '../src/client.js';
-import { readOptional, PairingCancelled } from '@codexplus/shared';
+import { readOptional } from '@codexplus/shared';
 import { usage } from '../src/options.js';
 import { startServer } from '@codexplus/app-server';
 import { addChoices, mainChoices, renderStatus } from '../src/ui.js';
-import { account, makeClient, pairCode, standalone, temporaryHome } from './helpers.js';
+import { account, makeClient, temporaryHome } from './helpers.js';
 
 const email = 'person@example.com';
 const idToken = `h.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.s`;
 const login = JSON.stringify({ tokens: { access_token: 'fake-access', id_token: idToken } });
-
-test('CP-007 配对码错误后原地重试成功，成功前不保存配置', async (context) => {
-  const userHome = await temporaryHome(context);
-  const serverHome = await temporaryHome(context);
-  const server = await standalone(context, serverHome);
-  const { client } = makeClient(context, userHome);
-  let attempts = 0;
-  let retried = false;
-  const session = await client.connect({
-    target: server.url,
-    askPairing: async () => ({ code: ++attempts === 1 ? 'invalid-test-code' : await pairCode(server.url, serverHome), name: 'test' }),
-    retryPairing: async (message) => {
-      assert.match(message, /配对失败/u);
-      assert.equal(await readOptional(client.configPath), null);
-      retried = true;
-      return true;
-    },
-  });
-  await session.close();
-  assert.equal(attempts, 2);
-  assert.equal(retried, true);
-  assert.equal((await client.config()).current, server.url);
-});
-
-test('CP-007 配对错误后取消，已有客户端配置保持不变', async (context) => {
-  const userHome = await temporaryHome(context);
-  const server = await standalone(context, await temporaryHome(context));
-  const { client } = makeClient(context, userHome);
-  await mkdir(client.home);
-  const before = JSON.stringify({ version: 2, current: 'local', servers: {}, baseline: null });
-  await writeFile(client.configPath, before);
-  let attempts = 0;
-  await assert.rejects(client.connect({
-    target: server.url,
-    askPairing: async () => { attempts++; return { code: 'invalid-test-code', name: 'test' }; },
-    retryPairing: async () => false,
-  }), PairingCancelled);
-  assert.equal(attempts, 1);
-  assert.equal(await readFile(client.configPath, 'utf8'), before);
-});
 
 test('CP-008 CODEX_HOME 中的登录可识别、上传和切换，默认文件不受影响', async (context) => {
   const userHome = await temporaryHome(context);
