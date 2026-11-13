@@ -446,3 +446,23 @@ export async function menu(store: Session): Promise<void> {
     }
   }
 }
+
+export async function switchAccount(store: Session, email?: string): Promise<void> {
+  const credentials = await store.list();
+  if (email !== undefined) {
+    const target = credentials.find((credential) => credential.email === email);
+    if (!target) throw new Error(`未找到已保存的账号：${email}。`);
+    const current = await store.current();
+    if (current.status === 'saved' && current.email === email) {
+      report(symbols.info, `${email} 就是当前登录的账号，无需切换。`);
+      return;
+    }
+    await switchTo(store, credentials, target);
+    return;
+  }
+  if (credentials.length === 0) {
+    report(symbols.info, '还没有保存的账号，请先添加。');
+    return;
+  }
+  await switchFlow(store, credentials, await store.current());
+}

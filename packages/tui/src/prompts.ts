@@ -12,7 +12,14 @@ interface PromptContext {
   clearPromptOnDone: boolean;
 }
 
+export function requireInteractive(message = '此操作需要选择或确认，请在交互式终端中运行 codexplus。'): void {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(message);
+  }
+}
+
 export async function escapable<T>(run: (context: PromptContext) => Promise<T>): Promise<T | typeof BACK> {
+  requireInteractive();
   const controller = new AbortController();
   const onKeypress = (_: string, key?: { name?: string }) => {
     if (key?.name === 'escape') {
@@ -51,6 +58,7 @@ export async function confirmUpload(details: Record<string, unknown>): Promise<b
 }
 
 export async function askRepair(url: string): Promise<boolean> {
+  requireInteractive('服务端实例已变化，需要在交互式终端中确认并重新配对。');
   report(symbols.warning, styleText('yellow', `${url} 上的服务端不是之前配对的那个`), '未发送已保存的令牌');
   const answer = await escapable((context) => select({
     message: '要与这个服务端重新配对吗？',
@@ -78,6 +86,7 @@ export async function confirmRestore(email: string | null): Promise<boolean> {
 }
 
 export async function askPairing(url: string) {
+  requireInteractive('此服务端需要配对，请先在交互式终端中连接并输入配对码。');
   report(symbols.info, `${url} 需要配对`, '请在服务端运行 codexplus-server pair 获取配对码');
   const code = await escapable((context) => password({ message: '服务端生成的配对码 (esc 取消)', mask: true, theme: inputTheme,
     validate: (value) => Boolean(value.trim()) || '请输入配对码。' }, context));
