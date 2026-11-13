@@ -18,7 +18,9 @@ test('Windows 支持独立可执行文件和 npm shim，直接启动 Node 避免
   await writeFile(join(npm, 'codex.cmd'), 'fixture');
   await writeFile(join(npm, 'node_modules', '@openai', 'codex', 'package.json'), '{}');
   await writeFile(script, 'fixture');
-  assert.deepEqual(await codexCommand({ Path: npm }, 'win32'), [process.execPath, await realpath(script)]);
+  const [command, ...args] = await codexCommand({ Path: npm }, 'win32');
+  assert.equal(command, process.execPath);
+  assert.deepEqual(await Promise.all(args.map((path) => realpath(path))), [await realpath(script)]);
   await writeFile(join(npm, 'codex.exe'), 'fixture');
   assert.deepEqual(await codexCommand({ PATH: npm }, 'win32'), [join(npm, 'codex.exe')]);
   await assert.rejects(codexCommand({ Path: home }, 'win32'), /安装官方 Codex CLI/u);
