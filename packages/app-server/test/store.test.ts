@@ -27,14 +27,15 @@ test('添加凭证时过滤顶层和 tokens 的额外字段，缺失字段不补
 
   assert.deepEqual(await store.list(), []);
   assert.deepEqual(await store.add(await readFile(source, 'utf8')), { credential: { type: 'codex', email: 'person@example.com' }, changed: true });
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), 'utf8'), filtered);
   assert.equal(await readFile(source, 'utf8'), original);
   assert.deepEqual(JSON.parse(await readFile(store.configPath, 'utf8')), {
     version: 1,
     credentials: [{ type: 'codex', email: 'person@example.com' }],
   });
   await assert.rejects(stat(join(home, '.codex', 'auth.json')), { code: 'ENOENT' });
-  assert.deepEqual(await readdir(store.credentialsPath), ['codex-person@example.com.json']);
+  assert.deepEqual(await readdir(store.credentialsPath), ['codex-person@example.com']);
+  assert.deepEqual(await readdir(join(store.credentialsPath, 'codex-person@example.com')), ['auth.json']);
 });
 
 for (const fields of [
@@ -69,7 +70,7 @@ for (const fields of [
     };
     const store = new CredentialStore({ userHome: home, request });
     await store.add(await readFile(source, 'utf8'));
-    assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8')), fields);
+    assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), 'utf8')), fields);
   });
 }
 
@@ -83,7 +84,7 @@ test('重复添加同一邮箱时更新文件，配置中不重复注册', async
   await writeFile(source, replacement);
   await store.add(await readFile(source, 'utf8'), await store.digest({ type: 'codex', email: 'person@example.com' }));
 
-  assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8')), {
+  assert.deepEqual(JSON.parse(await readFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), 'utf8')), {
     tokens: { access_token: 'fake-new-access' },
   });
   assert.deepEqual(await store.list(), [{ type: 'codex', email: 'person@example.com' }]);
@@ -128,7 +129,7 @@ test('查询失败时不更改已有凭证和配置', async (context) => {
   const denied: typeof fetch = async () => new Response(null, { status: 401 });
   await assert.rejects(new CredentialStore({ userHome: home, request: denied }).add(await readFile(source, 'utf8')), /HTTP 401/u);
   assert.equal(await readFile(store.configPath, 'utf8'), configBefore);
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), 'utf8'), filtered);
 });
 
 test('接口返回危险邮箱时不创建存储目录', async (context) => {
@@ -189,7 +190,7 @@ test('配置提交失败时恢复同邮箱的原始凭证', async (context) => {
     return Response.json({ email: 'person@example.com' });
   };
   await assert.rejects(new CredentialStore({ userHome: home, request }).add(await readFile(source, 'utf8')));
-  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com.json'), 'utf8'), filtered);
+  assert.equal(await readFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), 'utf8'), filtered);
 });
 
 test('下载凭证无需再次查询账号，不写入服务端 Codex 配置', async (context) => {
@@ -206,7 +207,7 @@ test('下载时拒绝缺失、损坏或未注册的凭证', async (context) => {
   const store = new CredentialStore({ userHome: home, request: account });
   const { credential } = await store.add(original);
   await assert.rejects(store.get({ type: 'codex', email: 'unknown@example.com' }), /未找到/u);
-  const savedPath = join(store.credentialsPath, 'codex-person@example.com.json');
+  const savedPath = join(store.credentialsPath, 'codex-person@example.com', 'auth.json');
   await writeFile(savedPath, '{"broken":true}');
   await assert.rejects(store.get(credential), /access_token/u);
   await rm(savedPath);
@@ -217,10 +218,10 @@ test('Unix 上的服务端凭证和配置权限为 0600，新增目录为 0700',
   const home = await temporaryHome(context);
   const store = new CredentialStore({ userHome: home, request: account });
   await store.add(original);
-  for (const path of [store.configPath, join(store.credentialsPath, 'codex-person@example.com.json')]) {
+  for (const path of [store.configPath, join(store.credentialsPath, 'codex-person@example.com', 'auth.json')]) {
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   }
-  for (const path of [join(home, '.codexplus'), store.credentialsPath]) {
+  for (const path of [join(home, '.codexplus'), store.credentialsPath, join(store.credentialsPath, 'codex-person@example.com')]) {
     assert.equal((await stat(path)).mode & 0o777, 0o700);
   }
 });
@@ -245,7 +246,7 @@ test('已保存的快照损坏时可以重新添加覆盖，不要求基线', as
   const home = await temporaryHome(context);
   const store = new CredentialStore({ userHome: home, request: account });
   const { credential } = await store.add(original, null);
-  await writeFile(join(store.credentialsPath, 'codex-person@example.com.json'), '{broken');
+  await writeFile(join(store.credentialsPath, 'codex-person@example.com', 'auth.json'), '{broken');
   await store.add(original, null);
   assert.equal(await store.get(credential), filtered);
 });

@@ -33,7 +33,7 @@ for (const refresh of [older, undefined, newer]) {
     await mkdir(join(userHome, '.codex'));
     await writeFile(session.codexAuthPath, auth('saved', newer));
     const { credential } = await session.add(session.codexAuthPath);
-    const snapshot = join(client.home, 'credentials', `codex-${email}.json`);
+    const snapshot = join(client.home, 'credentials', `codex-${email}`, 'auth.json');
     const before = await readFile(snapshot, 'utf8');
     await writeFile(session.codexAuthPath, auth('local-changed', refresh));
     assert.equal((await session.current()).status, 'diverged');

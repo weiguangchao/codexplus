@@ -1,4 +1,4 @@
-import { credentialFilename, isRecord } from '@codexplus/shared';
+import { credentialDirectory, isRecord } from '@codexplus/shared';
 import type { AuthTokens } from '@codexplus/shared';
 
 export interface Account {
@@ -43,6 +43,6 @@ export async function lookupAccount(tokens: AuthTokens, request: typeof fetch = 
   }
 
   const email = account.email.trim();
-  credentialFilename(email);
+  credentialDirectory(email);
   return { email };
 }

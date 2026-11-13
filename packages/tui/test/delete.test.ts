@@ -15,7 +15,7 @@ for (const broken of [null, '{broken', '{"tokens":{}}']) {
     const store = new CredentialStore({ home, request: account });
     const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
     const base = await store.digest(credential);
-    const path = join(store.credentialsPath, 'codex-person@example.com.json');
+    const path = join(store.credentialsPath, 'codex-person@example.com', 'auth.json');
     if (broken === null) await rm(path);
     else await writeFile(path, broken);
     await assert.rejects(requestService(server.url, '/v1/credentials/delete', token, { ...credential, base }), (error) => {
@@ -59,7 +59,7 @@ test('Session 删除损坏账号，删除菜单显示说明，未列出的账号
   const source = join(userHome, 'input.json');
   await writeFile(source, '{"tokens":{"access_token":"test"}}');
   const { credential } = await session.add(source);
-  await writeFile(join(client.home, 'credentials', 'codex-person@example.com.json'), '{broken');
+  await writeFile(join(client.home, 'credentials', 'codex-person@example.com', 'auth.json'), '{broken');
   const credentials = await session.list();
   const choices = deleteChoices(credentials, (email) => session.snapshotDigest(email));
   assert.equal(choices[0]?.description, '服务端保存的凭证文件缺失或损坏');
