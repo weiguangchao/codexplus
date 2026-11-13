@@ -1,4 +1,4 @@
-import { authDigest, parseAuth, credentialFilename, isRecord } from './auth.js';
+import { authDigest, parseAuth, credentialDirectory, isRecord } from './auth.js';
 
 export const defaultPort = 47831;
 
@@ -38,7 +38,7 @@ export function parseCredential(value: unknown): Credential {
   if (!isRecord(value) || value.type !== 'codex' || typeof value.email !== 'string') {
     throw new Error('凭证信息格式无效。');
   }
-  credentialFilename(value.email);
+  credentialDirectory(value.email);
   return { type: 'codex', email: value.email };
 }
 

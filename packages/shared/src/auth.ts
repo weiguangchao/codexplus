@@ -50,15 +50,15 @@ export function parseAuth(content: string): Auth {
   return filtered;
 }
 
-export function credentialFilename(email: string): string {
+export function credentialDirectory(email: string): string {
   if (
     !/^[^\s@/\\<>:"|?*]+@[^\s@/\\<>:"|?*]+$/u.test(email) ||
     Array.from(email).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
-    Buffer.byteLength(`codex-${email}.json`) > 255
+    Buffer.byteLength(`codex-${email}`) > 255
   ) {
-    throw new Error('账号邮箱无效，无法生成凭证文件名。');
+    throw new Error('账号邮箱无效，无法生成凭证目录名。');
   }
-  return `codex-${email}.json`;
+  return `codex-${email}`;
 }
 
 export function authDigest(content: string): string {

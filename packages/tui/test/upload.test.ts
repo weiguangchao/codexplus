@@ -14,7 +14,7 @@ test('相同内容上传返回未写入且不新增记录，不同内容照常�
   const upload = async (access: string, base: string | null) => await requestService(server.url, '/v1/credentials', token,
     { auth: { tokens: { access_token: access } }, base }) as UploadResult;
   assert.equal((await upload('v1', null)).changed, true);
-  const path = join(home, 'credentials', 'codex-person@example.com.json');
+  const path = join(home, 'credentials', 'codex-person@example.com', 'auth.json');
   const before = await stat(path);
   assert.equal((await upload('v1', null)).changed, false);
   assert.equal((await stat(path)).mtimeMs, before.mtimeMs);

@@ -1,7 +1,7 @@
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { authDigest, credentialFilename, isRecord, parseAuth, withLock, readOptional, writeAtomic, conflict, parseCredential } from '@codexplus/shared';
+import { dirname, join } from 'node:path';
+import { authDigest, credentialDirectory, isRecord, parseAuth, withLock, readOptional, writeAtomic, conflict, parseCredential } from '@codexplus/shared';
 import { lookupAccount } from './account.js';
 import type { Credential, UploadResult } from '@codexplus/shared';
 
@@ -23,6 +23,28 @@ export class CredentialStore {
     this.request = request;
     this.configPath = join(home, 'config.json');
     this.credentialsPath = join(home, 'credentials');
+  }
+
+  private async credentialPath(email: string): Promise<string> {
+    const directory = credentialDirectory(email);
+    const destination = join(this.credentialsPath, directory, 'auth.json');
+    const legacyName = `${directory}.json`;
+    if (Buffer.byteLength(legacyName) <= 255) {
+      const legacy = join(this.credentialsPath, legacyName);
+      const content = await readOptional(legacy);
+      if (content !== null) {
+        if (await readOptional(destination) === null) await writeAtomic(destination, content);
+        await rm(legacy);
+      }
+    }
+    return destination;
+  }
+
+  private async removeAuth(path: string): Promise<void> {
+    await rm(path, { force: true });
+    try { await rmdir(dirname(path)); } catch (error) {
+      if (!isRecord(error) || !['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(String(error.code))) throw error;
+    }
   }
 
   private async readConfig(): Promise<Config> {
@@ -58,7 +80,7 @@ export class CredentialStore {
       const selected = parseCredential(credential);
       const config = await this.readConfig();
       if (!config.credentials.some((entry) => entry.email === selected.email)) throw new Error('未找到所选凭证。');
-      const path = join(this.credentialsPath, credentialFilename(selected.email));
+      const path = await this.credentialPath(selected.email);
       let content: string | null;
       let digest: string | null = null;
       try {
@@ -67,7 +89,7 @@ export class CredentialStore {
       } catch { content = null; }
       if (digest !== base) throw conflict(selected.email, content);
       await writeAtomic(this.configPath, `${JSON.stringify({ ...config, credentials: config.credentials.filter((entry) => entry.email !== selected.email) }, null, 2)}\n`);
-      await rm(path, { force: true });
+      await this.removeAuth(path);
     });
   }
 
@@ -86,7 +108,7 @@ export class CredentialStore {
     return await withLock(this.home, async () => {
       const config = await this.readConfig();
       const credential: Credential = { type: 'codex', email };
-      const destination = join(this.credentialsPath, credentialFilename(email));
+      const destination = await this.credentialPath(email);
       const previous = await readOptional(destination);
 
       if (config.credentials.some((entry) => entry.email === email) && previous !== null) {
@@ -102,7 +124,7 @@ export class CredentialStore {
         await writeAtomic(this.configPath, `${JSON.stringify({ version: 1, credentials }, null, 2)}\n`);
       } catch (error) {
         if (previous === null) {
-          await rm(destination, { force: true });
+          await this.removeAuth(destination);
         } else {
           await writeAtomic(destination, previous);
         }
@@ -118,7 +140,7 @@ export class CredentialStore {
     if (!credentials.some((entry) => entry.type === credential.type && entry.email === credential.email)) {
       throw new Error('未找到所选凭证，请先添加。');
     }
-    const path = join(this.credentialsPath, credentialFilename(credential.email));
+    const path = await this.credentialPath(credential.email);
     const content = await readFile(path, 'utf8');
     parseAuth(content);
     return content;
@@ -126,7 +148,7 @@ export class CredentialStore {
 
   private async digestUnlocked(credential: Credential): Promise<string | null> {
     try {
-      const content = await readFile(join(this.credentialsPath, credentialFilename(credential.email)), 'utf8');
+      const content = await readFile(await this.credentialPath(credential.email), 'utf8');
       return authDigest(content);
     } catch {
       return null;

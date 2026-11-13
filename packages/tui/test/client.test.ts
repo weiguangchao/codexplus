@@ -113,7 +113,7 @@ test('服务端凭证损坏、选项不存在或本地输入无效时，不覆�
   await session.switch(credential);
   const before = await readFile(session.codexAuthPath, 'utf8');
   await assert.rejects(session.switch({ type: 'codex', email: 'missing@example.com' }), /未找到/u);
-  await writeFile(join(client.home, 'credentials', 'codex-person@example.com.json'), '{"tokens":{}}');
+  await writeFile(join(client.home, 'credentials', 'codex-person@example.com', 'auth.json'), '{"tokens":{}}');
   await assert.rejects(session.switch(credential), /access_token/u);
   assert.equal(await readFile(session.codexAuthPath, 'utf8'), before);
 });
@@ -126,7 +126,7 @@ test('Unix 上客户端和服务端的敏感文件权限为 0600，目录为 070
   await session.switch((await session.add(join(userHome, 'input.json'))).credential);
   await session.close();
   for (const path of [client.configPath, join(client.home, 'config.json'),
-    join(client.home, 'credentials', 'codex-person@example.com.json'), client.codexAuthPath]) {
+    join(client.home, 'credentials', 'codex-person@example.com', 'auth.json'), client.codexAuthPath]) {
     assert.equal((await stat(path)).mode & 0o777, 0o600);
   }
   for (const path of [client.home, join(userHome, '.codex')]) {
@@ -158,7 +158,7 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致且没有�
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'other@example.com' });
   await writeFile(session.codexAuthPath, '{"tokens":{"access_token":"x","id_token":"not-a-jwt"}}');
   assert.deepEqual(await session.current(), { status: 'unsaved', email: null });
-  const snapshot = join(client.home, 'credentials', 'codex-person@example.com.json');
+  const snapshot = join(client.home, 'credentials', 'codex-person@example.com', 'auth.json');
   await writeFile(session.codexAuthPath, JSON.stringify({ tokens: { access_token: 'b', id_token: idToken('person@example.com') } }));
   await rm(snapshot);
   assert.deepEqual(await session.current(), { status: 'unsaved', email: 'person@example.com' });
