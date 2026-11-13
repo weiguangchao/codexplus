@@ -41,6 +41,20 @@ test('客户端默认使用已记住的服务端，--local 指向本机，--serv
   assert.deepEqual(parseCommand(['-h']), { kind: 'help' });
 });
 
+test('status、list 和 switch 接受公共参数，switch 可以指定邮箱', () => {
+  const home = join(homedir(), '.codexplus');
+  for (const kind of ['status', 'list', 'switch']) {
+    assert.deepEqual(parseCommand([kind]), { kind, home });
+    assert.deepEqual(parseCommand(['--local', kind, '--home', './data']), { kind, home: resolve('data'), target: 'local' });
+    assert.deepEqual(parseCommand([kind, '--server', 'https://vault.example']), { kind, home, target: 'https://vault.example' });
+    assert.deepEqual(parseCommand([kind, '--help']), { kind: 'help' });
+  }
+  assert.deepEqual(parseCommand(['switch', 'person@example.com']), { kind: 'switch', home, email: 'person@example.com' });
+  for (const args of [['status', 'extra'], ['list', 'extra'], ['switch', 'a@example.com', 'b@example.com'], ['switch', ''], ['add']]) {
+    assert.throws(() => parseCommand(args));
+  }
+});
+
 test('serve 已移到 codexplus-server，提示改用新命令', () => {
   for (const args of [['serve'], ['serve', 'pair'], ['serve', '--port', '8443']]) {
     assert.throws(() => parseCommand(args), /codexplus-server/u, args.join(' '));

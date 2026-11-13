@@ -4,9 +4,9 @@ import { styleText } from 'node:util';
 import { isRecord, PairingCancelled } from '@codexplus/shared';
 import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
-import { menu } from './flows.js';
-import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel, retryPairing } from './prompts.js';
-import { cancelled, line, renderTitle, report, symbols } from './ui.js';
+import { menu, switchAccount } from './flows.js';
+import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel, requireInteractive, retryPairing } from './prompts.js';
+import { cancelled, line, renderStatus, renderTitle, report, symbols } from './ui.js';
 
 function readVersion(): string {
   try {
@@ -23,23 +23,44 @@ async function main(): Promise<void> {
     console.log(usage);
     return;
   }
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('请在交互式终端中运行 codexplus。');
+  if (command.kind === 'client' || command.kind === 'switch' && command.email === undefined) {
+    requireInteractive();
   }
 
-  console.log(renderTitle(readVersion()));
+  if (command.kind === 'client') console.log(renderTitle(readVersion()));
   const client = new CredentialClient({ home: command.home });
   const store = await client.connect({
     ...(command.target === undefined ? {} : { target: command.target }),
     askPairing,
     retryPairing,
     askRepair,
-    log: (message) => report(symbols.info, message),
+    log: (message) => console.error(line(symbols.info, message)),
   });
   store.confirmUpload = confirmUpload;
   store.confirmRestore = confirmRestore;
   try {
-    await menu(store);
+    if (command.kind === 'client') {
+      await menu(store);
+    } else if (command.kind === 'switch') {
+      await switchAccount(store, command.email);
+    } else {
+      const credentials = await store.list();
+      const current = await store.current();
+      if (command.kind === 'status') {
+        console.log(`运行模式  ${store.server === 'local' ? '本地模式' : '远程模式'}`);
+        console.log(store.server === 'local' ? `数据目录  ${store.home}` : `服务地址  ${store.url}`);
+        console.log(`登录文件  ${store.codexAuthPath}`);
+        console.log(renderStatus(current, credentials.length, store.codexAuthPath));
+      } else if (credentials.length === 0) {
+        console.log('暂无已保存的账号。');
+      } else {
+        for (const credential of credentials) {
+          const active = 'email' in current && current.email === credential.email;
+          const broken = store.snapshotDigest(credential.email) === null;
+          console.log(`${credential.email}${active ? '  ← 当前' : ''}${broken ? '  凭证文件缺失或损坏' : ''}`);
+        }
+      }
+    }
   } finally {
     await store.close();
   }

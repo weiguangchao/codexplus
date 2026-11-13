@@ -28,11 +28,31 @@ npm install --global ./packages/app-server  # 服务端：codexplus-server
 
 ```sh
 codexplus [--server 地址 | --local] [--home 目录]
+codexplus status|list [--server 地址 | --local] [--home 目录]
+codexplus switch [邮箱] [--server 地址 | --local] [--home 目录]
 codexplus-server [--host 127.0.0.1] [--port 47831] [--tls-cert 文件 --tls-key 文件] [--home 目录]
 codexplus-server pair|clients|revoke <客户端ID>|log [--limit 条数] [--home 目录]
 ```
 
 旧的 `codexplus serve ...` 已改为 `codexplus-server ...`，运行旧命令会报错并提示新命令。独立服务端监听端口默认 `47831`，可用 `--port` 指定。`--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。
+
+不带子命令时打开原有交互式菜单，以下命令执行完成后退出：
+
+| 命令 | 功能 |
+| --- | --- |
+| `codexplus status` | 显示运行模式、数据目录或服务地址、本机登录文件、当前账号及同步状态、已保存账号数量。 |
+| `codexplus list` | 按邮箱排序列出当前凭证库中的账号，标记当前账号及缺失或损坏的凭证。 |
+| `codexplus switch [邮箱]` | 精确匹配邮箱切换账号；省略邮箱时打开账号选择，切换到与凭证库一致的当前账号时提示无需切换。 |
+
+这三个命令都支持 `--local`、`--server` 和 `--home`，未指定运行模式时使用上次连接。`status` 和 `list` 支持管道和输出重定向，不输出凭证内容；远程连接失败会报错并以非零状态退出，不会显示为空列表。首次远程配对或服务端实例变化时，需要先在交互式终端中连接。
+
+指定邮箱只跳过账号选择，切换仍沿用当前登录保存提醒、版本冲突处理和运行中 Codex 确认。指定账号不存在时以非零状态退出；非交互环境中，只有无需选择或确认的指定账号切换可以执行，需要确认时以非零状态退出，本机登录文件保持不变。
+
+```sh
+codexplus status --local
+codexplus list --server https://codexplus.example.com
+codexplus switch person@example.com --home ./data
+```
 
 ## 本机使用
 
