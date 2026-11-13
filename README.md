@@ -112,7 +112,13 @@ codexplus-server revoke <客户端ID>
 | 客户端 | 版本 2：当前 local 或 URL、远程令牌及同步基线 | `<home>/client.json` |
 | 客户端 | 当前供本机 Codex 使用的账户凭证 | `$CODEX_HOME/auth.json`，未设置时为 `~/.codex/auth.json` |
 
-`<home>` 是各自的 `--home` 目录，默认 `~/.codexplus`。客户端只写自己的 `client.json` 和本机登录文件；凭证库和授权由服务端写入服务端目录。客户端自带的本地服务端使用客户端的 `--home`，因此两类文件可以位于同一目录。客户端添加文件时 `~/` 的含义、进程检测以操作系统用户为准；登录文件由 `CODEX_HOME` 决定，未设置时使用操作系统用户的 `~/.codex/auth.json`，不会被 `--home` 改变。
+`<home>` 是各自的 `--home` 目录，默认 `~/.codexplus`。客户端写自己的 `client.json` 和本机登录文件；本地模式切换时还会同步已存在的 CodexBar 配置，见下文。凭证库和授权由服务端写入服务端目录。客户端自带的本地服务端使用客户端的 `--home`，因此两类文件可以位于同一目录。客户端添加文件时 `~/` 的含义、进程检测以操作系统用户为准；登录文件由 `CODEX_HOME` 决定，未设置时使用操作系统用户的 `~/.codex/auth.json`，不会被 `--home` 改变。
+
+### CodexBar 联动（仅本地模式）
+
+本地模式成功切换账号后，若找到 CodexBar 配置及其中的 Codex 提供项，会自动更新该项的 `codexProfileHomePaths`：当前账号由 CodexBar 从本机 Codex 登录读取，不再列入额外目录；其余可读取的已保存账号使用 `<home>/credentials/codex-<邮箱>`。再次切换时，原账号会回到额外目录列表，新账号会从列表中移除。已删除、缺失或损坏的 codexplus 凭证也会在下次切换时从列表清理。仅维护当前 `<home>/credentials` 下的 `codex-*` 目录，其他手动添加的路径、提供项及设置保持不变。
+
+配置路径遵循 [CodexBar 的规则](https://github.com/steipete/CodexBar/blob/v0.84.0/Sources/CodexBarCore/Config/CodexBarConfigStore.swift)：优先使用 `CODEXBAR_CONFIG`，其次是绝对路径的 `$XDG_CONFIG_HOME/codexbar/config.json`（支持 `~/` 展开），否则优先 `~/.config/codexbar/config.json`，不存在时使用旧版 `~/.codexbar/config.json`。配置不存在、为空或没有 Codex 提供项时跳过，不创建配置；远程模式不读取或修改 CodexBar 配置。写入使用原子替换和 `0600` 权限，同步失败会提示，但不会撤销已完成的账号切换。
 
 服务端对配对客户端每次认证都从磁盘读取 `server-access.json`，不保留内存副本，手工修改立即生效。同目录的多个进程通过瞬时 `<home>/.lock` 串行读写；锁等待最多 10 秒，超过 30 秒的残留会回收，回收过程由瞬时的 `<home>/.lock.reclaim` 互斥，避免两个进程同时回收后都拿到锁；这个标记不会自动回收，进程恰好在回收中途崩溃时会留下它，此后残留锁不再被回收，命令会报错并提示在确认没有其他 codexplus 运行后手动删除；进程在写入锁内容前崩溃留下的空锁按文件修改时间判断。账号网络查询在锁外，健康接口不受慢查询阻塞。Windows 原子重命名遇到外部读取占用时重试约 2 秒。
 

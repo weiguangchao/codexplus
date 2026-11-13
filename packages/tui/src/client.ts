@@ -18,6 +18,7 @@ import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { idTokenEmail, newerRefresh } from './login.js';
+import { syncCodexBar } from './codexbar.js';
 import type { Credential, CurrentLogin, UploadResult } from '@codexplus/shared';
 import { startServer } from '@codexplus/app-server';
 
@@ -88,6 +89,7 @@ export class Session {
     private readonly stop: () => Promise<void>,
     private readonly owner?: CredentialClient,
     readonly server = url,
+    private readonly log: (message: string) => void = console.log,
   ) {}
 
   get home(): string { return this.owner?.home ?? this.userHome; }
@@ -228,6 +230,14 @@ export class Session {
     const auth = parseAuth(JSON.stringify(result.auth));
     await writeAtomic(this.codexAuthPath, `${JSON.stringify(auth, null, 2)}\n`);
     await this.baseline(selected.email, JSON.stringify(auth));
+    if (this.server === 'local') {
+      try {
+        const credentials = (await this.list()).filter(({ email }) => this.snapshotDigest(email) !== null);
+        await syncCodexBar({ userHome: this.userHome, home: this.home, credentials, currentEmail: selected.email });
+      } catch (error) {
+        this.log(`账号已切换，但 CodexBar 同步失败：${error instanceof Error ? error.message : '请检查配置文件和权限。'}`);
+      }
+    }
   }
 
   async close(): Promise<void> {
@@ -329,7 +339,7 @@ export class CredentialClient {
           const latest = await this.config();
           await writeAtomic(this.configPath, `${JSON.stringify({ ...latest, current: 'local' }, null, 2)}\n`);
         });
-        return new Session(embedded.url, token, this.userHome, this.codexAuthPath, () => embedded.close(), this, server);
+        return new Session(embedded.url, token, this.userHome, this.codexAuthPath, () => embedded.close(), this, server, log);
       } catch (error) { await embedded.close(); throw error; }
     }
     const url = serverUrl(server);
