@@ -6,7 +6,7 @@ import { newerRefresh } from './login.js';
 import type { Credential, CurrentLogin } from '@codexplus/shared';
 
 export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
-export type AddSource = 'codex' | 'file' | 'back';
+export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
 const dots = { filled: unicode ? '●' : figures.circleFilled, empty: unicode ? '○' : figures.circle };
@@ -113,7 +113,7 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin, au
             ? '当前登录有更新，可以重新保存以更新凭证。'
             : current.status === 'diverged'
               ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
-              : '保存一个 auth.json，同一邮箱已保存时会先确认再覆盖';
+              : '通过浏览器登录或导入 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
     ...(current.status === 'behind'
       ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ${authPath}` }]
@@ -199,6 +199,7 @@ export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json
       disabled: current.status === 'none' ? styleText('dim', '(未登录)') : current.status === 'invalid' ? styleText('dim', '(登录文件无效)') : false,
     },
     { value: 'file' as AddSource, name: '其他文件…', description: '手动输入 auth.json 的路径' },
+    { value: 'browser' as AddSource, name: '浏览器登录', description: '使用本机官方 Codex CLI 登录 ChatGPT，添加后可选择切换' },
     divider(),
     { value: 'back' as AddSource, name: '返回', description: '回到主菜单' },
   ];

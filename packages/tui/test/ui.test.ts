@@ -50,6 +50,8 @@ test('添加来源在找不到 Codex 登录时禁用', () => {
   assert.ok(codex && !(codex instanceof Separator) && codex.disabled);
   const [saved] = addChoices({ status: 'saved', email: 'alice@example.com' });
   assert.ok(saved && !(saved instanceof Separator) && !saved.disabled && /无需更新/u.test(saved.description));
+  const browser = addChoices({ status: 'none' }).find((choice) => !(choice instanceof Separator) && choice.value === 'browser');
+  assert.ok(browser && !(browser instanceof Separator) && !('disabled' in browser && browser.disabled));
 });
 
 test('按键提示使用中文并包含 esc', () => {
