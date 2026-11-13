@@ -3,6 +3,14 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { ParseArgsOptionsConfig } from 'node:util';
 
+export function parsePort(value: string): number {
+  const port = Number(value);
+  if (!/^\d+$/u.test(value) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('端口必须介于 1 和 65535。');
+  }
+  return port;
+}
+
 export function resolveHome(value: string | undefined): string {
   const home = value ?? join(homedir(), '.codexplus');
   if (!home.trim()) {

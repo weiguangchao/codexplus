@@ -58,13 +58,13 @@ test('路径输入窗口按光标滚动，首中尾及中文光标均留在单�
   }
 });
 
-test('普通详情换行保留完整配对命令，不按路径省略', () => {
+test('普通详情换行保留完整服务端命令，不按路径省略', () => {
   const previous = Object.getOwnPropertyDescriptor(process.stdout, 'columns');
   Object.defineProperty(process.stdout, 'columns', { value: 40, configurable: true });
   try {
-    const detail = '请在服务端运行 codexplus-server pair 获取配对码';
-    const shown = stripVTControlCharacters(renderLine('i', '需要配对', detail));
-    assert.ok(shown.includes('codexplus-server pair'));
+    const detail = '请运行 codexplus-server --port 47831 启动本机服务端';
+    const shown = stripVTControlCharacters(renderLine('i', '启动本机服务端', detail));
+    assert.ok(shown.includes('codexplus-server --port'));
     assert.ok(shown.replaceAll(/\s/gu, '').includes(detail.replaceAll(/\s/gu, '')));
     assert.ok(!shown.includes('…'));
   } finally {

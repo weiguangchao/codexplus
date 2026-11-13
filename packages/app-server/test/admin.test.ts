@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { runAdmin } from '../src/serve.js';
 import { temporaryHome } from './helpers.js';
 
-for (const action of ['pair', 'clients', 'revoke', 'log'] as const) {
+for (const action of ['log'] as const) {
   test(`${action} 拒绝不存在的目录和普通文件，不创建任何文件`, async (context) => {
     const parent = await temporaryHome(context);
     const missing = join(parent, 'missing', 'nested');
@@ -13,7 +13,7 @@ for (const action of ['pair', 'clients', 'revoke', 'log'] as const) {
     await writeFile(file, 'unchanged');
     for (const home of [missing, file, join(file, 'nested')]) {
       const messages: string[] = [];
-      await assert.rejects(runAdmin({ kind: 'admin', action, home: relative(process.cwd(), home), ...(action === 'revoke' ? { id: 'missing' } : {}) }, (message) => messages.push(message)), (error) => {
+      await assert.rejects(runAdmin({ kind: 'admin', action, home: relative(process.cwd(), home) }, (message) => messages.push(message)), (error) => {
         assert.ok(error instanceof Error);
         assert.ok(error.message.includes(resolve(home)));
         assert.match(error.message, /检查 --home 或先运行 codexplus-server/u);
@@ -31,14 +31,9 @@ for (const action of ['pair', 'clients', 'revoke', 'log'] as const) {
     const home = join(parent, 'empty');
     await mkdir(home);
     const messages: string[] = [];
-    const command = { kind: 'admin' as const, action, home, ...(action === 'revoke' ? { id: 'missing' } : {}) };
-    if (action === 'revoke') {
-      await assert.rejects(runAdmin(command, (message) => messages.push(message)), /未找到/u);
-      assert.deepEqual(messages, []);
-    } else {
-      await runAdmin(command, (message) => messages.push(message));
-      assert.match(messages.join('\n'), action === 'pair' ? /配对码：/u : action === 'clients' ? /暂无已配对客户端/u : /暂无操作记录/u);
-    }
+    const command = { kind: 'admin' as const, action, home };
+    await runAdmin(command, (message) => messages.push(message));
+    assert.match(messages.join('\n'), /暂无操作记录/u);
     assert.equal((await stat(home)).isDirectory(), true);
   });
 }

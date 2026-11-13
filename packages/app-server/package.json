@@ -1,7 +1,7 @@
 {
   "name": "@codexplus/app-server",
   "version": "0.1.0",
-  "description": "codexplus 服务端：保存账户凭证，管理配对和客户端授权",
+  "description": "codexplus 服务端：在本机保存和管理账户凭证",
   "private": true,
   "type": "module",
   "license": "MIT",

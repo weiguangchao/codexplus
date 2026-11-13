@@ -9,7 +9,7 @@ import { confirmRunningCodex, switchCredential } from '../src/switch.js';
 test('有运行中的进程时显示 PID，默认取消且不修改当前凭证', async (context) => {
   const home = await mkdtemp(join(tmpdir(), 'codexplus-switch-'));
   context.after(() => rm(home, { recursive: true, force: true }));
-  const store = new Session('http://127.0.0.1:1', 'token', home, join(home, '.codex', 'auth.json'), async () => {});
+  const store = new Session('http://127.0.0.1:1', home, join(home, '.codex', 'auth.json'), async () => {});
   const credential = { type: 'codex', email: 'person@example.com' } as const;
   await mkdir(join(home, '.codex'));
   const current = '{"tokens":{"access_token":"fake-current-access"}}';

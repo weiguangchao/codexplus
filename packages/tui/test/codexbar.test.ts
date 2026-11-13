@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { credentialDirectory, readOptional, writeAtomic } from '@codexplus/shared';
 import { syncCodexBar } from '../src/codexbar.js';
-import { makeClient, pairCode, standalone, temporaryHome } from './helpers.js';
+import { makeClient, standalone, temporaryHome } from './helpers.js';
 
 async function fixture(context: TestContext, customHome = false) {
   const userHome = await temporaryHome(context);
@@ -37,7 +37,7 @@ test('本地切换动态更新 CodexBar 目录，排除当前账户并保留手�
   };
   const config = { version: 1, customSetting: true, providers: [{ id: 'claude', enabled: false }, provider] };
   await writeAtomic(configPath, JSON.stringify(config));
-  const session = await client.connect({ target: 'local', log: () => {} });
+  const session = await client.connect({ log: () => {} });
   context.after(() => session.close());
 
   const original = await readFile(configPath, 'utf8');
@@ -63,13 +63,13 @@ test('本地切换动态更新 CodexBar 目录，排除当前账户并保留手�
   assert.deepEqual(JSON.parse(await readFile(configPath, 'utf8')).providers[1].codexProfileHomePaths, ['~/manual-account']);
 });
 
-test('URL 模式即使连接本机同一凭证库，也不修改 CodexBar', async (context) => {
+test('独立本机服务端即使使用同一凭证库，也不修改 CodexBar', async (context) => {
   const { userHome, client, credentials } = await fixture(context);
   const configPath = join(userHome, '.config', 'codexbar', 'config.json');
   await writeAtomic(configPath, '{"version":1,"providers":[{"id":"codex","codexProfileHomePaths":["~/manual"]}]}');
   const before = await readFile(configPath, 'utf8');
   const server = await standalone(context, client.home);
-  const session = await client.connect({ target: server.url, askPairing: async () => ({ code: await pairCode(server.url, client.home), name: 'test' }) });
+  const session = await client.connect({ port: Number(new URL(server.url).port) });
   context.after(() => session.close());
   await session.switch(credentials[0]!);
   assert.equal(await readFile(configPath, 'utf8'), before);
@@ -80,7 +80,7 @@ test('CodexBar 配置损坏时保留原文件、提示失败，仍完成账户�
   const { userHome, client, credentials } = await fixture(context);
   const configPath = join(userHome, '.config', 'codexbar', 'config.json');
   const logs: string[] = [];
-  const session = await client.connect({ target: 'local', log: (message) => logs.push(message) });
+  const session = await client.connect({ log: (message) => logs.push(message) });
   context.after(() => session.close());
   for (const content of [
     '{broken',

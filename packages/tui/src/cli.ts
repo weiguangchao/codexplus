@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { styleText } from 'node:util';
-import { isRecord, PairingCancelled } from '@codexplus/shared';
+import { isRecord } from '@codexplus/shared';
 import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { menu, switchAccount } from './flows.js';
-import { askPairing, askRepair, confirmRestore, confirmUpload, isCancel, requireInteractive, retryPairing } from './prompts.js';
-import { cancelled, line, renderStatus, renderTitle, report, symbols } from './ui.js';
+import { confirmRestore, confirmUpload, isCancel, requireInteractive } from './prompts.js';
+import { cancelled, line, renderStatus, renderTitle, symbols } from './ui.js';
 
 function readVersion(): string {
   try {
@@ -30,10 +30,7 @@ async function main(): Promise<void> {
   if (command.kind === 'client') console.log(renderTitle(readVersion()));
   const client = new CredentialClient({ home: command.home });
   const store = await client.connect({
-    ...(command.target === undefined ? {} : { target: command.target }),
-    askPairing,
-    retryPairing,
-    askRepair,
+    ...(command.port === undefined ? {} : { port: command.port }),
     log: (message) => console.error(line(symbols.info, message)),
   });
   store.confirmUpload = confirmUpload;
@@ -47,7 +44,7 @@ async function main(): Promise<void> {
       const credentials = await store.list();
       const current = await store.current();
       if (command.kind === 'status') {
-        console.log(`运行模式  ${store.server === 'local' ? '本地模式' : '远程模式'}`);
+        console.log('运行模式  本地模式');
         console.log(store.server === 'local' ? `数据目录  ${store.home}` : `服务地址  ${store.url}`);
         console.log(`登录文件  ${store.codexAuthPath}`);
         console.log(renderStatus(current, credentials.length, store.codexAuthPath));
@@ -67,10 +64,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  if (error instanceof PairingCancelled) {
-    report(symbols.info, error.message);
-    return;
-  }
   if (isCancel(error)) {
     cancelled();
     return;

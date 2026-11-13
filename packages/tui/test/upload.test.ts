@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { AccessStore, readAudit } from '@codexplus/app-server';
+import { readAudit } from '@codexplus/app-server';
 import { authDigest, requestService } from '@codexplus/shared';
 import type { UploadResult } from '@codexplus/shared';
 import { makeClient, standalone, temporaryHome } from './helpers.js';
@@ -10,8 +10,8 @@ import { makeClient, standalone, temporaryHome } from './helpers.js';
 test('相同内容上传返回未写入且不新增记录，不同内容照常写入和记录', async (context) => {
   const home = await temporaryHome(context);
   const server = await standalone(context, home);
-  const { token } = await new AccessStore(home).addClient('测试');
-  const upload = async (access: string, base: string | null) => await requestService(server.url, '/v1/credentials', token,
+
+  const upload = async (access: string, base: string | null) => await requestService(server.url, '/v1/credentials',
     { auth: { tokens: { access_token: access } }, base }) as UploadResult;
   assert.equal((await upload('v1', null)).changed, true);
   const path = join(home, 'credentials', 'codex-person@example.com', 'auth.json');

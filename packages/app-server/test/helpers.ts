@@ -1,6 +1,5 @@
 import { createServer } from 'node:net';
 import type { TestContext } from 'node:test';
-import { AccessStore } from '../src/access.js';
 import { startServer } from '../src/server.js';
 
 export { temporaryHome } from '../../shared/test/helpers.js';
@@ -35,16 +34,4 @@ export async function standalone(context: TestContext, home: string, port = 0, a
       await new Promise((resolve) => setTimeout(resolve, 100));
     },
   };
-}
-
-export async function admin(_url: string, home: string, action: string, body: Record<string, unknown> = {}): Promise<unknown> {
-  const store = new AccessStore(home);
-  if (action === 'pair') return await store.createPair();
-  if (action === 'clients') return { clients: await store.list() };
-  await store.revoke(String(body.id));
-  return { ok: true };
-}
-
-export async function pairCode(_url: string, home: string): Promise<string> {
-  return (await new AccessStore(home).createPair()).code;
 }
