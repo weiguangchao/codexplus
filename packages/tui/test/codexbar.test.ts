@@ -3,7 +3,7 @@ import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { credentialDirectory, readOptional, writeAtomic } from '@codexplus/shared';
+import { credentialDirectory, readOptional, writeAtomic } from '@weiguangchao/codexplus-shared';
 import { loginState, makeClient, standalone, temporaryHome } from './helpers.js';
 
 async function fixture(context: TestContext, customHome = false) {

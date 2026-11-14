@@ -1,6 +1,6 @@
 import { appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readOptional, writeAtomic, withLock } from '@codexplus/shared';
+import { readOptional, writeAtomic, withLock } from '@weiguangchao/codexplus-shared';
 
 export interface AuditEntry {
   time: string;

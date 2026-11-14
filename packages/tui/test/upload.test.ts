@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { readAudit } from '@codexplus/app-server';
-import { authDigest, requestService } from '@codexplus/shared';
-import type { UploadResult } from '@codexplus/shared';
+import { readAudit } from '@weiguangchao/codexplus-server';
+import { authDigest, requestService } from '@weiguangchao/codexplus-shared';
+import type { UploadResult } from '@weiguangchao/codexplus-shared';
 import { loginState, makeClient, standalone, temporaryHome } from './helpers.js';
 
 test('相同内容上传返回未写入且不新增记录，不同内容照常写入和记录', async (context) => {

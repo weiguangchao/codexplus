@@ -1,5 +1,5 @@
 import { confirm } from '@inquirer/prompts';
-import type { Credential } from '@codexplus/shared';
+import type { Credential } from '@weiguangchao/codexplus-shared';
 
 interface SwitchOptions {
   action?: 'switch' | 'update';

@@ -1,10 +1,10 @@
-import { isRecord, parseCredential, requestService, parsePort, protocolVersion, ServiceError } from '@codexplus/shared';
-import type { Credential, CurrentLogin, UploadResult } from '@codexplus/shared';
+import { isRecord, parseCredential, requestService, parsePort, protocolVersion, ServiceError } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin, UploadResult } from '@weiguangchao/codexplus-shared';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
-import { startServer } from '@codexplus/app-server';
+import { startServer } from '@weiguangchao/codexplus-server';
 
 export interface ConnectOptions {
   port?: number;

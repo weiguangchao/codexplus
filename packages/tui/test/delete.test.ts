@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { readAudit, CredentialStore } from '@codexplus/app-server';
-import { requestService, ServiceError } from '@codexplus/shared';
+import { readAudit, CredentialStore } from '@weiguangchao/codexplus-server';
+import { requestService, ServiceError } from '@weiguangchao/codexplus-shared';
 import { deleteChoices } from '../src/ui.js';
 import { account, makeClient, standalone, temporaryHome } from './helpers.js';
 

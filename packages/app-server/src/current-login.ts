@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { authDigest, expandPath, isRecord, newerRefresh, parseAuth, readOptional, ServiceError, writeAtomic } from '@codexplus/shared';
-import type { Credential, CurrentLogin, UploadResult } from '@codexplus/shared';
+import { authDigest, expandPath, isRecord, newerRefresh, parseAuth, readOptional, ServiceError, writeAtomic } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin, UploadResult } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from './store.js';
 import { idTokenEmail } from './login.js';
 import { LoginState } from './login-state.js';

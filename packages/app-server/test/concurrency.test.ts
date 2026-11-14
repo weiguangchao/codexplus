@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { requestService } from '@codexplus/shared';
+import { requestService } from '@weiguangchao/codexplus-shared';
 import { standalone, temporaryHome } from './helpers.js';
 
 test('同目录双服务端并发上传保留索引，慢查询不阻塞健康接口', async (context) => {

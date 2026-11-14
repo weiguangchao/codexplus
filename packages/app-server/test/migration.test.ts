@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { authDigest } from '@codexplus/shared';
+import { authDigest } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from '../src/store.js';
 import { temporaryHome } from './helpers.js';
 

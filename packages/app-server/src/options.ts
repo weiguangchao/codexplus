@@ -1,4 +1,4 @@
-import { defaultPort, parseOptions, parsePort, resolveHome } from '@codexplus/shared';
+import { defaultPort, parseOptions, parsePort, resolveHome } from '@weiguangchao/codexplus-shared';
 import type { AdminCommand, ServeCommand } from './serve.js';
 
 export type ServerCommand = { kind: 'help' } | ServeCommand | AdminCommand;

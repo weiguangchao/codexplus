@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { writeAtomic } from '@codexplus/shared';
+import { writeAtomic } from '@weiguangchao/codexplus-shared';
 import { LoginState } from '../src/login-state.js';
 import { temporaryHome } from './helpers.js';
 

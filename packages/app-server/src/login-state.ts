@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { isRecord, readOptional, ServiceError, withLock, writeAtomic } from '@codexplus/shared';
+import { isRecord, readOptional, ServiceError, withLock, writeAtomic } from '@weiguangchao/codexplus-shared';
 
 interface State {
   version: 1;

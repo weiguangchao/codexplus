@@ -14,13 +14,21 @@
 需要 Node.js 22.22.2+（22.x）、24.15.0+（24.x）或 26+。
 
 ```sh
-npm ci
-npm run build
-npm install --global ./packages/tui         # 客户端：codexplus
-npm install --global ./packages/app-server  # 服务端：codexplus-server
+npm install --global @weiguangchao/codexplus@latest
+codexplus
 ```
 
-直接使用时安装客户端即可，其中包含本机服务端；独立运行服务端时可单独安装 app-server，不需要 TUI 依赖。全局安装会链接到仓库目录，因此需要保留仓库并在更新后重新运行 `npm run build`。
+直接使用时安装客户端即可，其中包含本机服务端。临时使用可运行 `npx @weiguangchao/codexplus@latest`，升级时重新执行全局安装命令。独立运行服务端时使用 `npm install --global @weiguangchao/codexplus-server@latest`，不需要 TUI 依赖。npm 安装需要先完成下文的首次发布。
+
+从源码安装时，在仓库根目录执行：
+
+```sh
+npm ci
+npm run build
+npm install --global ./packages/tui
+```
+
+源码全局安装会链接到仓库目录，因此需要保留仓库并在更新后重新运行 `npm run build`；需要独立服务端命令时再运行 `npm install --global ./packages/app-server`。
 
 开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（服务端），两者直接运行源码，都显式传入 `--home .codexplus`，将数据放在项目根目录已忽略的 `.codexplus/` 中。
 
@@ -179,20 +187,41 @@ HTTP 协议版本为 4；连接前检查服务名称和版本，不兼容时不�
 
 | 包 | 内容 | 依赖 |
 | --- | --- | --- |
-| `packages/shared`（`@codexplus/shared`） | 凭证解析与摘要、原子写入、目录锁、HTTP 协议、`--home` 和命令参数解析 | 无 |
-| `packages/app-server`（`@codexplus/app-server`） | 凭证库、当前登录文件、同步状态、浏览器登录、进程检测、CodexBar、操作记录和本机 HTTP 服务，命令 `codexplus-server` | shared |
-| `packages/tui`（`@codexplus/tui`） | 视图、菜单、输入、确认与 API 调用，命令 `codexplus` | shared、app-server（本机模式内嵌服务端） |
+| `packages/shared`（`@weiguangchao/codexplus-shared`） | 凭证解析与摘要、原子写入、目录锁、HTTP 协议、`--home` 和命令参数解析 | 无 |
+| `packages/app-server`（`@weiguangchao/codexplus-server`） | 凭证库、当前登录文件、同步状态、浏览器登录、进程检测、CodexBar、操作记录和本机 HTTP 服务，命令 `codexplus-server` | shared |
+| `packages/tui`（`@weiguangchao/codexplus`） | 视图、菜单、输入、确认与 API 调用，命令 `codexplus` | shared、app-server（本机模式内嵌服务端） |
 
-各包都是私有包，不发布到 npm，版本保持一致。各包测试放在自己的 `test/` 目录；需要同时启动客户端和服务端的测试放在 tui。开发、类型检查和测试通过 `source` 导出条件直接使用其他包的源码，无需先构建；构建用 `tsc -b` 按依赖顺序输出各包的 `dist/`。
+根包为私有工作区入口，三个工作区包公开发布到 npm，版本保持一致。各包测试放在自己的 `test/` 目录；需要同时启动客户端和服务端的测试放在 tui。开发、类型检查和测试通过 `source` 导出条件直接使用其他包的源码，无需先构建；构建用 `tsc -b` 按依赖顺序输出各包的 `dist/`。
+
+## 标签发版
+
+推送 `v0.1.x` 标签触发 `.github/workflows/release.yml`，其中 `x` 是不带前导零的非负整数，例如：
+
+```sh
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
+```
+
+标签应指向已包含发布工作流的提交，并使用尚未使用的版本。版本直接取自标签，工作流临时更新根包、三个工作区包、内部依赖及 lockfile，不提交这些版本变更。下次发布只需推送新的标签，例如 `v0.1.2`。其他版本系列和预发布标签不会发布；匹配 `v0.1.*` 但格式非法的标签会在版本校验时失败。
+
+工作流复用 Linux、macOS、Windows 上 Node.js 22、24 的完整检查和安装验证，全部通过后按 shared → app-server → tui 的顺序公开发布到 npm 的 `latest` 标签。安装验证将三个 tarball 安装到临时全局目录，在仓库外启动两个 CLI，并使用隔离的 Codex 目录运行 `codexplus status`。
+
+首次发布前，使用 npm 用户 `weiguangchao` 的个人 scope，无需创建组织。在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置 `NPM_TOKEN`，Token 的包和 scope 权限需允许向 `@weiguangchao` 创建和发布这三个包，并启用 Bypass 2FA；未配置可信发布时，每次发布都需要有效的 token。不要把 token 写入仓库。
+
+首次发布完成后，可分别在三个 npm 包的 Settings → Trusted publishing 中配置 GitHub Actions：用户 `weiguangchao`、仓库 `codexplus`、工作流文件 `release.yml`，允许直接执行 `npm publish`，不填 environment。工作流已启用 `id-token: write` 并使用 npm 11，配置成功后可以删除 `NPM_TOKEN`，后续使用 OIDC 发布。认证要求见 [npm 可信发布文档](https://docs.npmjs.com/trusted-publishers/) 和 [scoped 包发布文档](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/)。
+
+npm 已发布版本不可覆盖。若发布中途失败且部分包已经发布，请修复问题并使用新的补丁标签重新发布三个包。
 
 ## 开发与验证
 
 ```sh
 npm ci
 npm run check
-npm pack --dry-run --workspaces
+npm run test:package
 ```
 
 `check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
+
+可运行 `npm run release:prepare -- v0.1.1` 在本机验证版本同步；此命令会修改根包、工作区包及 lockfile，正式发布由工作流在临时检出目录内完成。
 
 测试使用独立临时主目录、真实本机 HTTP 服务和模拟账号查询接口，覆盖字段过滤、原有凭证兼容、存储回滚、自带本地服务端、独立本机端口、版本检查、旧客户端配置迁移、拒绝远程入口、日志离线读取、并发上传、服务端重启、请求限制、条件删除、操作记录与裁剪、服务端登录文件写入、TUI 请求和响应不含凭证、浏览器登录取消与重试和 Unix 文件权限，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行检查。

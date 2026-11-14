@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { styleText } from 'node:util';
-import { isRecord } from '@codexplus/shared';
+import { isRecord } from '@weiguangchao/codexplus-shared';
 import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { menu, switchAccount } from './flows.js';

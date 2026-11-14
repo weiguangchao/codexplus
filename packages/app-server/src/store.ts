@@ -1,9 +1,9 @@
 import { readFile, rm, rmdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { authDigest, credentialDirectory, isRecord, parseAuth, withLock, readOptional, writeAtomic, conflict, parseCredential } from '@codexplus/shared';
+import { authDigest, credentialDirectory, isRecord, parseAuth, withLock, readOptional, writeAtomic, conflict, parseCredential } from '@weiguangchao/codexplus-shared';
 import { lookupAccount } from './account.js';
-import type { Credential, UploadResult } from '@codexplus/shared';
+import type { Credential, UploadResult } from '@weiguangchao/codexplus-shared';
 
 interface Config {
   version: 1;

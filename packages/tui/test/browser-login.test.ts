@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { startServer } from '@codexplus/app-server';
-import { requestService, writeAtomic } from '@codexplus/shared';
+import { startServer } from '@weiguangchao/codexplus-server';
+import { requestService, writeAtomic } from '@weiguangchao/codexplus-shared';
 import { CredentialClient } from '../src/client.js';
 import { loginState, temporaryHome } from './helpers.js';
 
