@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { readAudit, recordAudit } from '../src/audit.js';
-import { requestService, ServiceError } from '@codexplus/shared';
+import { requestService, ServiceError } from '@weiguangchao/codexplus-shared';
 import { runAdmin } from '../src/serve.js';
 import { CredentialStore } from '../src/store.js';
 import { account, standalone, temporaryHome } from './helpers.js';

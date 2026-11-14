@@ -1,5 +1,5 @@
 {
-  "name": "@codexplus/shared",
+  "name": "@weiguangchao/codexplus-shared",
   "version": "0.1.0",
   "description": "codexplus 客户端与服务端共用的凭证解析、文件读写、目录锁和 HTTP 协议",
   "type": "module",

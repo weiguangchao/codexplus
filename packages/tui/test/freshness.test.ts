@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { newerRefresh } from '@codexplus/shared';
+import { newerRefresh } from '@weiguangchao/codexplus-shared';
 import { UploadCancelled } from '../src/client.js';
 import { mainChoices, refreshDetails, renderStatus } from '../src/ui.js';
 import { makeClient, temporaryHome } from './helpers.js';

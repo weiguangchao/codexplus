@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ServiceError } from '@codexplus/shared';
+import { ServiceError } from '@weiguangchao/codexplus-shared';
 import { browserLogin } from './browser-login.js';
 
 interface BrowserSession {

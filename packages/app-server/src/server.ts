@@ -5,7 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { recordAudit, recordCommitted } from './audit.js';
-import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion } from '@codexplus/shared';
+import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from './store.js';
 import { CurrentLoginStore } from './current-login.js';
 import type { SaveOptions } from './current-login.js';

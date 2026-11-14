@@ -1,5 +1,5 @@
 {
-  "name": "@codexplus/app-server",
+  "name": "@weiguangchao/codexplus-server",
   "version": "0.1.0",
   "description": "codexplus 服务端：在本机保存和管理账户凭证",
   "type": "module",
@@ -30,6 +30,6 @@
     "codexplus-server": "dist/cli.js"
   },
   "dependencies": {
-    "@codexplus/shared": "0.1.0"
+    "@weiguangchao/codexplus-shared": "0.1.0"
   }
 }

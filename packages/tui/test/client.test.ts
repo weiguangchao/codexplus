@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { authDigest } from '@codexplus/shared';
+import { authDigest } from '@weiguangchao/codexplus-shared';
 import { UploadCancelled } from '../src/client.js';
 import { filtered, loginState, makeClient, original, standalone, temporaryHome } from './helpers.js';
 

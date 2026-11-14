@@ -1,6 +1,6 @@
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { credentialDirectory, expandPath, isRecord, readOptional, writeAtomic } from '@codexplus/shared';
-import type { Credential } from '@codexplus/shared';
+import { credentialDirectory, expandPath, isRecord, readOptional, writeAtomic } from '@weiguangchao/codexplus-shared';
+import type { Credential } from '@weiguangchao/codexplus-shared';
 
 async function readConfig(userHome: string, env: NodeJS.ProcessEnv): Promise<{ path: string; content: string } | null> {
   const override = env.CODEXBAR_CONFIG?.trim();

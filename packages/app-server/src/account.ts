@@ -1,5 +1,5 @@
-import { credentialDirectory, isRecord } from '@codexplus/shared';
-import type { AuthTokens } from '@codexplus/shared';
+import { credentialDirectory, isRecord } from '@weiguangchao/codexplus-shared';
+import type { AuthTokens } from '@weiguangchao/codexplus-shared';
 
 export interface Account {
   email: string;

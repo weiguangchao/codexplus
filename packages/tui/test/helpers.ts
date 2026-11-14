@@ -1,7 +1,7 @@
 import { join } from 'node:path';
-import { readOptional } from '@codexplus/shared';
+import { readOptional } from '@weiguangchao/codexplus-shared';
 import type { TestContext } from 'node:test';
-import { startServer } from '@codexplus/app-server';
+import { startServer } from '@weiguangchao/codexplus-server';
 import { CredentialClient } from '../src/client.js';
 import { account } from '../../app-server/test/helpers.js';
 

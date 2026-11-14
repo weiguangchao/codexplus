@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { CredentialStore } from '@codexplus/app-server';
-import { authDigest } from '@codexplus/shared';
+import { CredentialStore } from '@weiguangchao/codexplus-server';
+import { authDigest } from '@weiguangchao/codexplus-shared';
 import { standalone, temporaryHome } from './helpers.js';
 
 const first = 'a@example.com';

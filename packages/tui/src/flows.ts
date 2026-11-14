@@ -1,13 +1,13 @@
 import { select } from '@inquirer/prompts';
 import { isAbsolute, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
-import { isRecord, ServiceError } from '@codexplus/shared';
+import { isRecord, ServiceError } from '@weiguangchao/codexplus-shared';
 import { UploadCancelled } from './client.js';
 import type { Session } from './client.js';
 import { BACK, escapable, isCancel } from './prompts.js';
 import { pathInput } from './path-input.js';
 import { browserLoginPrompt } from './browser-prompt.js';
-import type { Credential, CurrentLogin } from '@codexplus/shared';
+import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 import { confirmRunningCodex } from './switch.js';
 import {
   addChoices,

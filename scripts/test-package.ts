@@ -25,10 +25,10 @@ try {
   for (const packed of packages) {
     assert.equal((await lstat(join(installed, packed.name))).isSymbolicLink(), false);
   }
-  const run = (name: string, args: string[]) => execFileSync(process.execPath, [join(installed, '@codexplus', name, 'dist', 'cli.js'), ...args], { cwd: temporary, env, encoding: 'utf8' });
-  assert.match(run('tui', ['--help']), /codexplus status/u);
-  assert.match(run('app-server', ['--help']), /codexplus-server/u);
-  assert.match(run('tui', ['status', '--home', join(temporary, 'data')]), /本地模式/u);
+  const run = (name: string, args: string[]) => execFileSync(process.execPath, [join(installed, name, 'dist', 'cli.js'), ...args], { cwd: temporary, env, encoding: 'utf8' });
+  assert.match(run('@weiguangchao/codexplus', ['--help']), /codexplus status/u);
+  assert.match(run('@weiguangchao/codexplus-server', ['--help']), /codexplus-server/u);
+  assert.match(run('@weiguangchao/codexplus', ['status', '--home', join(temporary, 'data')]), /本地模式/u);
   console.log('发布包安装验证通过：独立安装三个 tarball，客户端与服务端可启动。');
 } finally {
   await rm(temporary, { recursive: true, force: true });

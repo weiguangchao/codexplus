@@ -3,7 +3,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { connect, Server } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { protocolVersion, requestService } from '@codexplus/shared';
+import { protocolVersion, requestService } from '@weiguangchao/codexplus-shared';
 import { startServer } from '../src/server.js';
 import { freePort, standalone, temporaryHome } from './helpers.js';
 

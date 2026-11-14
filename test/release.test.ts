@@ -29,7 +29,7 @@ test('标签决定根包、工作区包、内部依赖和 lockfile 的发布版�
       assert.equal(lock.packages[directory].version, '0.1.12');
       assert.equal(manifest.private, directory === '' ? true : undefined);
       for (const [name, version] of Object.entries(original.dependencies ?? {})) {
-        const expected = name.startsWith('@codexplus/') ? '0.1.12' : version;
+        const expected = name.startsWith('@weiguangchao/codexplus') ? '0.1.12' : version;
         assert.equal(manifest.dependencies[name], expected);
         assert.equal(lock.packages[directory].dependencies[name], expected);
       }

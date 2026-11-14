@@ -2,8 +2,8 @@ import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import stringWidth from 'fast-string-width';
 import { styleText } from 'node:util';
-import { newerRefresh } from '@codexplus/shared';
-import type { Credential, CurrentLogin } from '@codexplus/shared';
+import { newerRefresh } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 
 export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
 export type AddSource = 'codex' | 'file' | 'browser' | 'back';

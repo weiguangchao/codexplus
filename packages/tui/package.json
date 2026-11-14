@@ -1,5 +1,5 @@
 {
-  "name": "@codexplus/tui",
+  "name": "@weiguangchao/codexplus",
   "version": "0.1.0",
   "description": "codexplus 客户端：在本机终端添加和切换 Codex 账号",
   "type": "module",
@@ -23,8 +23,8 @@
     "codexplus": "dist/cli.js"
   },
   "dependencies": {
-    "@codexplus/app-server": "0.1.0",
-    "@codexplus/shared": "0.1.0",
+    "@weiguangchao/codexplus-server": "0.1.0",
+    "@weiguangchao/codexplus-shared": "0.1.0",
     "@inquirer/core": "^12.1.0",
     "@inquirer/figures": "^2.1.0",
     "@inquirer/prompts": "^8.8.0",

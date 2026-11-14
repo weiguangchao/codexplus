@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { readOptional, writeAtomic } from '@codexplus/shared';
+import { readOptional, writeAtomic } from '@weiguangchao/codexplus-shared';
 import { syncCodexBar } from '../src/codexbar.js';
 import { temporaryHome } from './helpers.js';
 

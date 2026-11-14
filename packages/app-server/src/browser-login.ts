@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { isRecord, parseAuth } from '@codexplus/shared';
+import { isRecord, parseAuth } from '@weiguangchao/codexplus-shared';
 
 interface LoginOptions {
   signal?: AbortSignal;

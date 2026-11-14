@@ -3,9 +3,9 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CredentialClient } from '../src/client.js';
-import { readOptional } from '@codexplus/shared';
+import { readOptional } from '@weiguangchao/codexplus-shared';
 import { usage } from '../src/options.js';
-import { startServer } from '@codexplus/app-server';
+import { startServer } from '@weiguangchao/codexplus-server';
 import { addChoices, mainChoices, renderStatus } from '../src/ui.js';
 import { account, makeClient, temporaryHome } from './helpers.js';
 

@@ -1,4 +1,4 @@
-import { isRecord } from '@codexplus/shared';
+import { isRecord } from '@weiguangchao/codexplus-shared';
 
 export function idTokenEmail(content: string): string | null {
   try {
