@@ -16,6 +16,8 @@
     "dev": "tsx --conditions=source packages/tui/src/cli.ts --home .codexplus",
     "dev:server": "tsx --conditions=source packages/app-server/src/cli.ts --home .codexplus",
     "build": "tsc -b tsconfig.build.json",
+    "release:prepare": "tsx --conditions=source scripts/prepare-release.ts",
+    "test:package": "tsx --conditions=source scripts/test-package.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "tsx --conditions=source --test test/*.test.ts packages/*/test/*.test.ts",

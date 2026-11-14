@@ -2,9 +2,17 @@
   "name": "@codexplus/app-server",
   "version": "0.1.0",
   "description": "codexplus 服务端：在本机保存和管理账户凭证",
-  "private": true,
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/weiguangchao/codexplus.git",
+    "directory": "packages/app-server"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },

@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v0.1.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Use npm with trusted publishing support
+        run: npm install --global npm@11
+      - run: npm ci
+      - name: Set release versions from tag
+        run: npm run release:prepare -- "$RELEASE_TAG"
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - run: npm run build
+      - name: Publish shared, app-server, then TUI
+        run: |
+          npm publish --workspace @codexplus/shared --access public
+          npm publish --workspace @codexplus/app-server --access public
+          npm publish --workspace @codexplus/tui --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

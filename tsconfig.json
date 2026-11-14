@@ -4,5 +4,5 @@
     "noEmit": true,
     "customConditions": ["source"]
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "test/**/*.ts"]
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }
