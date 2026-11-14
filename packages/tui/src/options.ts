@@ -17,7 +17,7 @@ export const usage = [
   '默认自带本机服务端；--port 仅连接 127.0.0.1 上已运行的服务端。',
   '',
   '仅支持 ChatGPT 登录凭证，不接受只有 API key 的文件。',
-  '登录文件：$CODEX_HOME/auth.json；未设置 CODEX_HOME 时使用 ~/.codex/auth.json。',
+  '登录文件由服务端读写：使用服务端的 $CODEX_HOME/auth.json，未设置时为 ~/.codex/auth.json。',
   '服务端已改为独立命令 codexplus-server，运行 codexplus-server --help 查看用法。',
 ].join('\n');
 

@@ -1,11 +1,11 @@
 import { createPrompt, makeTheme, useEffect, useKeypress, usePrefix, useRef, useState } from '@inquirer/core';
 import { styleText } from 'node:util';
-import { browserLogin } from './browser-login.js';
+import type { Session } from './client.js';
 import { inputTheme, wrapWords } from './ui.js';
 
-type Result = { auth: string } | { error: unknown } | null;
+type Result = { id: string } | { error: unknown } | null;
 
-export const browserLoginPrompt = createPrompt<Result, Record<string, never>>((_config, done) => {
+export const browserLoginPrompt = createPrompt<Result, { store: Session }>(({ store }, done) => {
   const [url, setUrl] = useState('');
   const [manual, setManual] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -13,10 +13,13 @@ export const browserLoginPrompt = createPrompt<Result, Record<string, never>>((_
   const prefix = usePrefix({ status: 'loading', theme: makeTheme(inputTheme) });
   useEffect(() => {
     const { signal } = controller.current;
-    void browserLogin({ signal, onUrl: setUrl, onBrowserError: () => setManual(true) }).then(
-      (auth) => done(signal.aborted ? null : { auth }),
-      (error: unknown) => done(signal.aborted ? null : { error }),
-    );
+    void (async () => {
+      try {
+        const id = await store.browserLogin({ signal, onUrl: setUrl, onBrowserError: () => setManual(true) });
+        if (signal.aborted) { await store.cancelBrowserLogin(id); done(null); }
+        else done({ id });
+      } catch (error) { done(signal.aborted ? null : { error }); }
+    })();
     return () => controller.current.abort();
   }, []);
   useKeypress((key) => {

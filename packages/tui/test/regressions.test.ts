@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { CredentialClient } from '../src/client.js';
 import { readOptional } from '@codexplus/shared';
@@ -24,7 +24,7 @@ test('CP-008 CODEX_HOME 中的登录可识别、上传和切换，默认文件�
   await writeFile(join(custom, 'auth.json'), login);
   const session = await client.connect();
   context.after(() => session.close());
-  assert.equal(client.codexAuthPath, join(custom, 'auth.json'));
+  assert.equal(session.codexAuthPath, join(custom, 'auth.json'));
   assert.deepEqual(await session.current(), { status: 'unsaved', email });
   assert.equal(await readOptional(join(userHome, '.codex', 'auth.json')), null);
   const { credential } = await session.add(session.codexAuthPath);
@@ -38,14 +38,16 @@ test('CP-008 CODEX_HOME 中的登录可识别、上传和切换，默认文件�
   assert.equal((await session.current()).status, 'saved');
 });
 
-test('CP-008 空环境变量回退默认目录，~/ 路径按用户目录展开', () => {
+test('CP-008 空环境变量回退默认目录，~/ 路径按服务端用户目录展开', async (context) => {
   const previous = process.env.CODEX_HOME;
-  const userHome = resolve('isolated-user');
+  const userHome = await temporaryHome(context);
   try {
     for (const value of ['', '  ', '~/custom codex']) {
       process.env.CODEX_HOME = value;
       const client = new CredentialClient({ userHome });
-      assert.equal(client.codexAuthPath, join(userHome, value.trim() ? 'custom codex' : '.codex', 'auth.json'));
+      const session = await client.connect();
+      context.after(() => session.close());
+      assert.equal(session.codexAuthPath, join(userHome, value.trim() ? 'custom codex' : '.codex', 'auth.json'));
     }
   } finally { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; }
 });

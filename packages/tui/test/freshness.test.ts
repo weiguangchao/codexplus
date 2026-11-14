@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { newerRefresh } from '../src/login.js';
+import { newerRefresh } from '@codexplus/shared';
 import { UploadCancelled } from '../src/client.js';
 import { mainChoices, refreshDetails, renderStatus } from '../src/ui.js';
 import { makeClient, temporaryHome } from './helpers.js';
@@ -81,7 +81,7 @@ test('删除当前账号保留本机登录且默认退出，再次保存必须�
   const login = auth('saved', newer);
   await writeFile(session.codexAuthPath, login);
   const { credential } = await session.add(session.codexAuthPath);
-  await session.current();
+  await session.list();
   await session.delete(credential);
   const current = await session.current();
   assert.deepEqual(current, { status: 'deleted', email });
@@ -107,7 +107,7 @@ for (const token of [undefined, 'not-a-jwt']) {
     const content = (access: string) => JSON.stringify({ tokens: { access_token: access, id_token: token } });
     await writeFile(session.codexAuthPath, content('v1'));
     const { credential } = await session.add(session.codexAuthPath);
-    await session.current();
+    await session.list();
     const changed = content('v2');
     await writeFile(session.codexAuthPath, changed);
     await session.delete(credential);

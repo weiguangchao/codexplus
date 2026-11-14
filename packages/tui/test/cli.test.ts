@@ -91,7 +91,9 @@ test('独立本机服务端的 status 和 list 支持无 TTY，服务中断时�
   await save(serverHome, first);
   const server = await standalone(context, serverHome);
   const port = new URL(server.url).port;
-  await login(root, auth(first));
+  await mkdir(join(serverHome, '.codex'), { recursive: true });
+  await writeFile(join(serverHome, '.codex', 'auth.json'), auth(first));
+  await login(root, auth(second));
   const status = await run(root, ['status', '--port', port]);
   assert.equal(status.code, 0, status.stderr);
   assert.ok(status.stdout.includes(`运行模式  本地模式\n服务地址  ${server.url}`));
@@ -117,7 +119,7 @@ test('旧远程入口在真实 CLI 中直接报错，不写入客户端配置', 
   await assert.rejects(readFile(join(root, 'vault', 'client.json')), { code: 'ENOENT' });
 });
 
-test('指定账号切换复用实际下载写入和同步基线，不进入菜单', async (context) => {
+test('指定账号通过服务端切换登录并保存同步基线，不进入菜单', async (context) => {
   const root = await temporaryHome(context);
   const home = join(root, 'vault');
   await save(home, first);
@@ -128,8 +130,8 @@ test('指定账号切换复用实际下载写入和同步基线，不进入菜�
   assert.match(result.stdout, /已切换到 b@example.com/u);
   assert.doesNotMatch(result.stdout, /要做什么|fake-access/u);
   assert.deepEqual(JSON.parse(await readFile(join(root, 'codex', 'auth.json'), 'utf8')), JSON.parse(auth(second)));
-  const config = JSON.parse(await readFile(join(home, 'client.json'), 'utf8'));
-  assert.deepEqual(config.baseline, { server: 'local', email: second, digest: authDigest(auth(second)) });
+  const config = JSON.parse(await readFile(join(home, 'login.json'), 'utf8'));
+  assert.deepEqual(config.baseline, { email: second, digest: authDigest(auth(second)) });
 });
 
 test('邮箱精确匹配，未知账号报错，同一已保存账号无需确认或写入', async (context) => {

@@ -8,6 +8,7 @@ export const serverUsage = [
   'codexplus-server log [--limit 条数] [--home 目录]',
   '',
   '服务端仅监听 127.0.0.1，不接受远程连接。',
+  '服务端管理当前 Codex 登录：$CODEX_HOME/auth.json，未设置时为 ~/.codex/auth.json。',
 ].join('\n');
 
 export function parseServerCommand(args: string[]): ServerCommand {

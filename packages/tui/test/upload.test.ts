@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { readAudit } from '@codexplus/app-server';
 import { authDigest, requestService } from '@codexplus/shared';
 import type { UploadResult } from '@codexplus/shared';
-import { makeClient, standalone, temporaryHome } from './helpers.js';
+import { loginState, makeClient, standalone, temporaryHome } from './helpers.js';
 
 test('相同内容上传返回未写入且不新增记录，不同内容照常写入和记录', async (context) => {
   const home = await temporaryHome(context);
@@ -34,11 +34,11 @@ test('Session 返回写入结果，相同的当前登录上传仍保存基线，
   await writeFile(source, content);
   assert.equal((await session.add(source)).changed, true);
   assert.equal((await session.add(source)).changed, false);
-  assert.equal((await client.config()).baseline, null);
+  assert.equal((await loginState(client.home)).baseline, null);
   await mkdir(join(userHome, '.codex'));
   await writeFile(session.codexAuthPath, content);
   const result = await session.add(session.codexAuthPath);
   assert.equal(result.changed, false);
-  assert.deepEqual((await client.config()).baseline, { server: 'local', email: result.credential.email, digest: authDigest(content) });
+  assert.deepEqual((await loginState(client.home)).baseline, { email: result.credential.email, digest: authDigest(content) });
   assert.equal((await readAudit(client.home)).length, 1);
 });
