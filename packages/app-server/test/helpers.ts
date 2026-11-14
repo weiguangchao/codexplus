@@ -1,4 +1,5 @@
 import { createServer } from 'node:net';
+import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { startServer } from '../src/server.js';
 
@@ -18,7 +19,7 @@ export async function freePort(): Promise<number> {
 }
 
 export async function standalone(context: TestContext, home: string, port = 0, accountRequest = account) {
-  const server = await startServer({ home, port, accountRequest });
+  const server = await startServer({ home, userHome: home, codexHome: join(home, '.codex'), port, accountRequest });
   let open = true;
   context.after(async () => {
     if (open) {

@@ -1,11 +1,10 @@
 import { confirm } from '@inquirer/prompts';
-import { findCodexProcesses } from './processes.js';
 import type { Credential } from '@codexplus/shared';
 
 interface SwitchOptions {
   action?: 'switch' | 'update';
   authPath?: string;
-  findProcesses?: typeof findCodexProcesses;
+  findProcesses: () => Promise<{ pid: number; command: string }[]>;
   ask?: (options: { message: string; default: boolean; action?: 'switch' | 'update' }) => Promise<boolean>;
   log?: (message: string) => void;
 }
@@ -13,10 +12,10 @@ interface SwitchOptions {
 export async function confirmRunningCodex({
   action = 'switch',
   authPath = '~/.codex/auth.json',
-  findProcesses = findCodexProcesses,
+  findProcesses,
   ask = confirm,
   log = console.log,
-}: SwitchOptions = {}): Promise<boolean> {
+}: SwitchOptions): Promise<boolean> {
   const processes = await findProcesses();
   const verb = action === 'update' ? '更新' : '切换';
   if (processes.length > 0) {
@@ -40,7 +39,7 @@ export async function confirmRunningCodex({
 export async function switchCredential(
   store: { switch(credential: Credential): Promise<void> },
   credential: Credential,
-  options: SwitchOptions = {},
+  options: SwitchOptions,
 ): Promise<void> {
   if (!await confirmRunningCodex(options)) {
     return;

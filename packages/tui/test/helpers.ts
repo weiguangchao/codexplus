@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { readOptional } from '@codexplus/shared';
 import type { TestContext } from 'node:test';
 import { startServer } from '@codexplus/app-server';
 import { CredentialClient } from '../src/client.js';
@@ -29,4 +30,8 @@ export function makeClient(context: TestContext, userHome: string, home = join(u
     },
   });
   return { client, started };
+}
+
+export async function loginState(home: string): Promise<{ baseline: { email: string; digest: string } | null }> {
+  return JSON.parse(await readOptional(join(home, 'login.json')) ?? '{"baseline":null}');
 }

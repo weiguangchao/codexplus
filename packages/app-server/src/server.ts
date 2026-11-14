@@ -7,6 +7,11 @@ import { join } from 'node:path';
 import { recordAudit, recordCommitted } from './audit.js';
 import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion } from '@codexplus/shared';
 import { CredentialStore } from './store.js';
+import { CurrentLoginStore } from './current-login.js';
+import type { SaveOptions } from './current-login.js';
+import { BrowserSessions } from './browser-sessions.js';
+import { browserLogin } from './browser-login.js';
+import { findCodexProcesses } from './processes.js';
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -40,13 +45,17 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 export async function startServer({
-  home = join(homedir(), '.codexplus'), port = defaultPort, sessionToken, accountRequest = fetch,
-}: { home?: string; port?: number; sessionToken?: string; accountRequest?: typeof fetch } = {}): Promise<{
+  userHome = homedir(), home = join(userHome, '.codexplus'), codexHome = process.env.CODEX_HOME?.trim() || join(userHome, '.codex'),
+  port = defaultPort, sessionToken, accountRequest = fetch, login = browserLogin, findProcesses = findCodexProcesses,
+}: { home?: string; userHome?: string; codexHome?: string; port?: number; sessionToken?: string; accountRequest?: typeof fetch;
+  login?: typeof browserLogin; findProcesses?: typeof findCodexProcesses } = {}): Promise<{
   url: string;
   close(): Promise<void>;
 }> {
   await mkdir(home, { recursive: true, mode: 0o700 });
   const store = new CredentialStore({ home, request: accountRequest });
+  const current = new CurrentLoginStore(store, home, userHome, codexHome);
+  const browsers = new BrowserSessions(login);
   const client = { id: 'local', name: '本机' };
 
   async function route(request: IncomingMessage, body: Record<string, unknown>): Promise<unknown> {
@@ -64,6 +73,43 @@ export async function startServer({
     if (request.method === 'GET' && path === '/v1/credentials') {
       return { credentials: await store.snapshots() };
     }
+    if (request.method === 'GET' && path === '/v1/login/info') return await current.info();
+    if (request.method === 'GET' && path === '/v1/login') return { current: await current.current() };
+    if (request.method === 'GET' && path === '/v1/login/processes') return { processes: await findProcesses() };
+    if (request.method === 'POST' && ['/v1/login/save', '/v1/login/switch', '/v1/login/refresh-times',
+      '/v1/credentials/import', '/v1/credentials/validate', '/v1/login/browser/start', '/v1/login/browser/status',
+      '/v1/login/browser/save', '/v1/login/browser/cancel'].includes(path)) {
+      try {
+        const options: SaveOptions = {};
+        if (Object.hasOwn(body, 'base')) {
+          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, 'base 必须为摘要或 null。');
+          options.base = body.base;
+        }
+        if (Object.hasOwn(body, 'restore')) {
+          if (typeof body.restore !== 'boolean') throw new HttpError(400, 'restore 必须为布尔值。');
+          options.restore = body.restore;
+        }
+        if (path === '/v1/login/save') return await current.saveCurrent(options);
+        if (path === '/v1/login/switch') return await current.switch(parseCredential(body));
+        if (path === '/v1/login/refresh-times') return await current.refreshTimes(parseCredential(body).email);
+        if (path === '/v1/credentials/import' || path === '/v1/credentials/validate') {
+          if (typeof body.path !== 'string') throw new HttpError(400, '请输入 auth.json 文件路径。');
+          if (path === '/v1/credentials/import') return await current.import(body.path, options);
+          await current.readSource(body.path);
+          return { ok: true };
+        }
+        if (path === '/v1/login/browser/start') return browsers.start();
+        if (typeof body.id !== 'string') throw new HttpError(400, '缺少浏览器登录标识。');
+        if (path === '/v1/login/browser/status') return browsers.status(body.id);
+        if (path === '/v1/login/browser/save') return await current.save(browsers.auth(body.id), false, options);
+        await browsers.cancel(body.id);
+        return { ok: true };
+      } catch (error) {
+        if (error instanceof HttpError || error instanceof ServiceError) throw error;
+        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        throw error;
+      }
+    }
     if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download' || path === '/v1/credentials/delete')) {
       try {
         if (path === '/v1/credentials') {
@@ -75,8 +121,7 @@ export async function startServer({
         const credential = parseCredential(body);
         if (path === '/v1/credentials/delete') {
           if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要或 null。');
-          await store.delete(credential, body.base);
-          await recordCommitted(home, '删除', client, { email: credential.email });
+          await current.delete(credential, body.base);
           return { ok: true };
         }
         const auth = parseAuth(await store.get(credential));
@@ -126,10 +171,13 @@ export async function startServer({
       resolve();
     });
   });
-  const close = (): Promise<void> => new Promise((resolve, reject) => {
-    server.close((error) => error ? reject(error) : resolve());
-    server.closeIdleConnections();
-  });
+  const close = async (): Promise<void> => {
+    await browsers.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+      server.closeIdleConnections();
+    });
+  };
   try {
     await ready;
   } catch (error) {

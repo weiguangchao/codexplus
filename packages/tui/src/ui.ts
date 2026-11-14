@@ -2,7 +2,7 @@ import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import stringWidth from 'fast-string-width';
 import { styleText } from 'node:util';
-import { newerRefresh } from './login.js';
+import { newerRefresh } from '@codexplus/shared';
 import type { Credential, CurrentLogin } from '@codexplus/shared';
 
 export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
@@ -199,7 +199,7 @@ export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json
       disabled: current.status === 'none' ? styleText('dim', '(未登录)') : current.status === 'invalid' ? styleText('dim', '(登录文件无效)') : false,
     },
     { value: 'file' as AddSource, name: '其他文件…', description: '手动输入 auth.json 的路径' },
-    { value: 'browser' as AddSource, name: '浏览器登录', description: '使用本机官方 Codex CLI 登录 ChatGPT，添加后可选择切换' },
+    { value: 'browser' as AddSource, name: '浏览器登录', description: '通过服务端的官方 Codex CLI 登录 ChatGPT，添加后可选择切换' },
     divider(),
     { value: 'back' as AddSource, name: '返回', description: '回到主菜单' },
   ];

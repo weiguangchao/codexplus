@@ -1,7 +1,7 @@
 import { authDigest, parseAuth, credentialDirectory, isRecord } from './auth.js';
 
 export const defaultPort = 47831;
-export const protocolVersion = 3;
+export const protocolVersion = 4;
 
 export interface Credential {
   type: 'codex';
