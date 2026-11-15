@@ -52,7 +52,7 @@ test('CP-008 空环境变量回退默认目录，~/ 路径按服务端用户目�
   } finally { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; }
 });
 
-test('CP-009 区分缺失、无效、不可读和有效未保存，不推荐保存无效文件', async (context) => {
+test('CP-009 无效登录引导添加有效凭证，禁止保存无效文件', async (context) => {
   const userHome = await temporaryHome(context);
   const { client } = makeClient(context, userHome);
   const session = await client.connect();
@@ -62,7 +62,7 @@ test('CP-009 区分缺失、无效、不可读和有效未保存，不推荐保�
     await writeFile(session.codexAuthPath, content);
     const current = await session.current();
     assert.equal(current.status, 'invalid');
-    assert.equal(mainChoices([], current).default, 'exit');
+    assert.equal(mainChoices([], current).default, 'add');
     assert.match(renderStatus(current, 0), /登录文件无效.*[\s\S]*重新登录/u);
     const source = addChoices(current)[0];
     assert.ok(source && 'disabled' in source && source.disabled);

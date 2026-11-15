@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
 import { Separator } from '@inquirer/prompts';
 import { addChoices, deleteChoices, displayWidth, fit, line, mainChoices, maskEmail, maskHomePath, renderStatus, resetCardChoices, selectTheme, switchChoices } from '../src/ui.js';
+import { renderSelect } from '../src/select.js';
 
 const alice = { type: 'codex' as const, email: 'alice@example.com' };
 const bob = { type: 'codex' as const, email: 'bob@example.com' };
@@ -129,8 +130,9 @@ test('添加来源在找不到 Codex 登录时禁用', () => {
 });
 
 test('按键提示使用中文并包含 esc', () => {
-  const tip = plain(selectTheme('返回').style.keysHelpTip([['↑↓', 'navigate'], ['⏎', 'select']]));
-  assert.equal(tip, '↑↓ 移动 · ⏎ 确认 · esc 返回');
+  const tip = plain(renderSelect({ message: '选择', choices: [{ value: false, name: '返回' }, { value: true, name: '继续' }], theme: selectTheme('返回') },
+    { active: 0, query: '', error: '' }, 80, 24));
+  assert.match(tip, /↑↓ 移动.*Enter 确认.*Esc 返回/u);
 });
 
 test('按显示宽度截断中文', () => {
@@ -148,7 +150,7 @@ test('结果行过宽时把路径放到下一行', () => {
 
 test('服务端更新默认下载，删除菜单随账号列表启用', () => {
   assert.equal(mainChoices([alice], { status: 'behind', email: alice.email }).default, 'update');
-  for (const status of ['behind', 'diverged'] as const) assert.match(plain(renderStatus({ status, email: alice.email }, 1)), status === 'behind' ? /服务端有更新版本/u : /与服务端版本不一致/u);
+  for (const status of ['behind', 'diverged'] as const) assert.match(plain(renderStatus({ status, email: alice.email }, 1)), status === 'behind' ? /账号库有更新版本/u : /与账号库版本不一致/u);
   const findDelete = (credentials: typeof alice[]) => mainChoices(credentials, { status: 'none' }).choices.find((choice) => !(choice instanceof Separator) && choice.value === 'delete');
   const empty = findDelete([]);
   const filled = findDelete([alice]);

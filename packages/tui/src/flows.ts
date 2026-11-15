@@ -1,4 +1,4 @@
-import { select } from '@inquirer/prompts';
+import { select } from './select.js';
 import { isAbsolute, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
 import { isRecord, ServiceError } from '@weiguangchao/codexplus-shared';
@@ -9,9 +9,10 @@ import { pathInput } from './path-input.js';
 import { browserLoginPrompt } from './browser-prompt.js';
 import { resetCardFlow } from './reset-cards.js';
 import { accountInfoFlow } from './account-info.js';
+import { homeSummary, locationSummary, renderHome, renderLocations, stepTitle } from './screens.js';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 import { confirmRunningCodex } from './switch.js';
-import type { RunningCodexDecision } from './switch.js';
+import { askRunningCodex, logRunningCodex } from './process-prompt.js';
 import {
   addChoices,
   describeCurrent,
@@ -23,16 +24,14 @@ import {
   report,
   mainChoices,
   pathLabel,
-  menuTheme,
   needsBackup,
-  renderStatus,
   refreshDetails,
   selectTheme,
   switchChoices,
   symbols,
   withSpinner,
 } from './ui.js';
-import type { AddSource } from './ui.js';
+import type { AddSource, MainAction } from './ui.js';
 
 function tildify(store: Session, path: string): string {
   if (!isAbsolute(path)) return path;
@@ -102,6 +101,20 @@ async function askPath(store: Session, previous: string) {
   return escapable((context) => pathInput({ initial: previous, validate: (value) => validatePath(store, value) }, context));
 }
 
+async function afterAdded(store: Session, added: Credential): Promise<boolean> {
+  const current = await store.current();
+  if (current.status === 'saved' && current.email === added.email) return false;
+  const use = await escapable((context) => select({
+    message: stepTitle('添加账号', '账号已保存', maskEmail(added.email)),
+    choices: [
+      { value: false, name: '完成', description: '回到主菜单' },
+      { value: true, name: '立即切换', description: `切换到 ${maskEmail(added.email)}` },
+    ],
+    default: false, theme: selectTheme('完成'),
+  }, context));
+  return use === true && await switchTo(store, await store.list(), added) === 'done';
+}
+
 async function browserAddFlow(store: Session): Promise<boolean> {
   const result = await browserLoginPrompt({ store }, { clearPromptOnDone: true });
   if (result === null) {
@@ -122,7 +135,7 @@ async function browserAddFlow(store: Session): Promise<boolean> {
         if (error instanceof UploadCancelled) { report(symbols.info, error.message); return false; }
         report(symbols.failure, styleText('red', `保存失败：${describeError(store, error)}`));
         const retry = await escapable((context) => select({
-          message: '浏览器登录已完成，要重新保存吗？',
+          message: stepTitle('添加账号 / 浏览器登录', '登录已完成，要重新保存吗？'),
           choices: [{ value: true, name: '重试保存', description: '使用本次登录凭证，无需重新登录' }, { value: false, name: '返回', description: '丢弃本次登录凭证' }],
           default: true,
           theme: selectTheme('返回'),
@@ -130,16 +143,7 @@ async function browserAddFlow(store: Session): Promise<boolean> {
         if (retry !== true) return false;
       }
     }
-    const use = await escapable((context) => select({
-      message: '账号已添加，要立即使用吗？',
-      choices: [
-        { value: false, name: '完成', description: '回到主菜单' },
-        { value: true, name: '立即切换', description: `切换到 ${maskEmail(added.email)}` },
-      ],
-      default: false,
-      theme: selectTheme('完成'),
-    }, context));
-    return use === true && await switchTo(store, await store.list(), added) === 'done';
+    return await afterAdded(store, added);
   } finally { await store.cancelBrowserLogin(result.id); }
 }
 
@@ -149,7 +153,7 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
   for (;;) {
     const choice = await escapable((context) =>
       select(
-        { message: '从哪里添加？\n仅支持 ChatGPT 登录凭证。\n不接受只有 API key 的文件。', choices: addChoices(current, tildify(store, store.codexAuthPath)), default: source, theme: selectTheme('返回') },
+        { message: stepTitle('添加账号', '选择添加方式', '使用 ChatGPT 登录凭证，不支持 API key。'), choices: addChoices(current, tildify(store, store.codexAuthPath)), default: source, theme: selectTheme('返回') },
         context,
       ),
     );
@@ -195,9 +199,8 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
         break;
       }
       previous = path;
-      if (await trySave(store, credentials, path)) {
-        return false;
-      }
+      const added = await trySave(store, credentials, path);
+      if (added) return await afterAdded(store, added);
     }
   }
 }
@@ -211,10 +214,10 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead'
   return escapable((context) =>
     select(
       {
-        message: `即将切换到 ${styleText('cyan', maskEmail(target.email))}\n  ${styleText('yellow', warning)}`,
+        message: stepTitle('切换账号 / 保存当前登录', `即将切换到 ${maskEmail(target.email)}`, `  ${styleText('yellow', warning)}`),
         choices: [
           { value: 'save' as const, name: save, description: '保存后再切换，之后可以随时切回来' },
-          { value: 'overwrite' as const, name: '不保存，直接切换', description: '当前登录的最新凭证将被覆盖，无法恢复' },
+          { value: 'overwrite' as const, name: '不保存，直接切换', tone: 'danger', description: '当前登录的最新凭证将被覆盖，无法恢复' },
           { value: 'back' as const, name: '返回', description: '重新选择账号' },
         ],
         theme: selectTheme('返回'),
@@ -225,7 +228,7 @@ async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead'
 }
 
 async function downloadCurrent(store: Session, email: string): Promise<boolean> {
-  if (!(await confirmRunningCodex({ action: 'update', findProcesses: () => store.processes(), authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex }))) {
+  if (!(await confirmRunningCodex({ action: 'update', findProcesses: () => store.processes(), authPath: tildify(store, store.codexAuthPath), ask: askRunningCodex, log: logRunningCodex }))) {
     console.log('');
     return false;
   }
@@ -238,12 +241,12 @@ async function downloadCurrent(store: Session, email: string): Promise<boolean> 
 async function resolveDivergence(store: Session, email: string, switching: boolean): Promise<'local' | 'server' | 'back'> {
   const times = await store.refreshTimes(email);
   const decision = await escapable((context) => select({
-    message: `${styleText('bold', maskEmail(email))} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshDetails(times.local, times.server))}`,
+    message: stepTitle(`${switching ? '切换账号' : '添加账号'} / 解决版本冲突`, `${maskEmail(email)} 的两份凭证版本不一致`, `  ${refreshDetails(times.local, times.server)}`),
     choices: [
-      { value: 'local' as const, name: switching ? '先用本机登录覆盖服务端，再切换' : '用本机登录覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
+      { value: 'local' as const, name: switching ? '先用本机登录覆盖服务端，再切换' : '用本机登录覆盖服务端', tone: 'danger', description: '服务端保存的版本将被替换，无法恢复' },
       switching
-        ? { value: 'server' as const, name: '不保存，直接切换', description: '本机登录将被覆盖，服务端保存的版本不变' }
-        : { value: 'server' as const, name: '用服务端版本覆盖本机', description: `下载服务端保存的版本并写入 ${tildify(store, store.codexAuthPath)}` },
+        ? { value: 'server' as const, name: '不保存，直接切换', tone: 'danger', description: '本机登录将被覆盖，服务端保存的版本不变' }
+        : { value: 'server' as const, name: '用服务端版本覆盖本机', tone: 'danger', description: `下载服务端保存的版本并写入 ${tildify(store, store.codexAuthPath)}` },
       { value: 'back' as const, name: '返回', description: switching ? '重新选择账号' : '不做更改' },
     ],
     default: 'back',
@@ -297,49 +300,17 @@ async function backupBeforeSwitch(store: Session, credentials: Credential[], tar
   }
 }
 
-function logRunningCodex(message: string): void {
-  if (message.startsWith('  ')) {
-    console.log(styleText('dim', message));
-  } else if (message.startsWith('检测到')) {
-    console.log(line(symbols.warning, styleText('yellow', message)));
-  } else {
-    console.log(line(' ', styleText('dim', message)));
-  }
-}
-
-async function askRunningCodex({ message, action }: { message: string; default: boolean; action?: 'switch' | 'update' }): Promise<RunningCodexDecision> {
-  const answer = await escapable((context) =>
-    select<RunningCodexDecision>(
-      {
-        message,
-        choices: [
-          { value: false, name: '取消，先退出 Codex', description: '回到主菜单，当前凭证不变' },
-          { value: true, name: action === 'update' ? '仍然更新' : '仍然切换', description: '将改写本机凭证，正在运行的会话后续请求可能受影响' },
-          ...(action === 'update' ? [] : [{ value: 'restart' as const, name: '仍然切换并重启 codex server', description: '切换后重启 Codex 托管后台服务，可能中断正在运行的任务' }]),
-        ],
-        default: false,
-        theme: selectTheme('取消'),
-      },
-      context,
-    ),
-  );
-  if (answer === true || answer === 'restart') {
-    console.log('');
-  }
-  return answer === BACK ? false : answer;
-}
-
 async function switchFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<boolean> {
-  const menu = switchChoices(credentials, current);
+  const menu = switchChoices(credentials, current, (email) => store.snapshotDigest(email));
   if (menu.default === null) {
-    report(symbols.info, '已保存的账号只有当前这一个，请先添加其他账号。');
+    report(symbols.info, '没有其他可切换的账号，请先添加有效凭证。');
     return false;
   }
   let selected = menu.default;
   for (;;) {
     const target = await escapable((context) =>
       select(
-        { message: '切换到哪个账号？', choices: menu.choices, default: selected, theme: selectTheme('返回'), pageSize: 10 },
+        { message: stepTitle('切换账号', '选择要使用的账号'), choices: menu.choices, default: selected, theme: selectTheme('返回'), searchable: true },
         context,
       ),
     );
@@ -357,7 +328,7 @@ async function switchTo(store: Session, credentials: Credential[], target: Crede
   const next = await backupBeforeSwitch(store, credentials, target);
   if (next === 'back') return 'back';
   if (next === 'switch') {
-    const decision = await confirmRunningCodex({ findProcesses: () => store.processes(), authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex });
+    const decision = await confirmRunningCodex({ findProcesses: () => store.processes(), authPath: tildify(store, store.codexAuthPath), ask: askRunningCodex, log: logRunningCodex });
     if (!decision) {
       console.log('');
       return 'cancel';
@@ -380,21 +351,21 @@ async function switchTo(store: Session, credentials: Credential[], target: Crede
 
 async function deleteFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<void> {
   const selected = await escapable((context) => select({
-    message: '删除哪个账号？',
+    message: stepTitle('删除账号', '选择要从账号库删除的账号', '下一步再次确认。本机登录会保留。'),
     choices: deleteChoices(credentials, (email) => store.snapshotDigest(email)),
     default: null,
     theme: selectTheme('返回'),
-    pageSize: 10,
+    searchable: true,
   }, context));
   if (selected === BACK || selected === null) {
     return;
   }
   const active = 'email' in current && current.email === selected.email;
   const confirmed = await escapable((context) => select({
-    message: `确认从服务端删除 ${styleText('cyan', maskEmail(selected.email))}？\n  ${styleText('yellow', '删除后无法恢复。')}${active ? styleText('dim', ` 本机 ${tildify(store, store.codexAuthPath)} 不受影响。`) : ''}`,
+    message: stepTitle('删除账号 / 确认删除', `从账号库删除 ${maskEmail(selected.email)}？`, `  删除后无法恢复。${active ? `本机 ${tildify(store, store.codexAuthPath)} 不受影响。` : ''}`),
     choices: [
       { value: false, name: '取消', description: '保留该账号' },
-      { value: true, name: '删除', description: '从服务端移除该账号保存的凭证' },
+      { value: true, name: '删除', tone: 'danger', description: '从账号库移除该账号保存的凭证' },
     ],
     default: false,
     theme: selectTheme('取消'),
@@ -404,21 +375,18 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
   }
   try {
     await store.delete(selected);
-    report(symbols.success, `已删除 ${styleText('bold', maskEmail(selected.email))}`, active ? '已从凭证库删除，本机登录保留' : undefined);
+    report(symbols.success, `已删除 ${styleText('bold', maskEmail(selected.email))}`, active ? '已从账号库删除，本机登录保留' : undefined);
   } catch (error) {
     if (!(error instanceof ServiceError) || error.status !== 409) {
       throw error;
     }
-    report(symbols.warning, styleText('yellow', `${maskEmail(selected.email)} 在服务端已被更新，未删除。`), '列表已刷新，请重新决定');
+    report(symbols.warning, styleText('yellow', `${maskEmail(selected.email)} 在账号库中已被更新，未删除。`), '列表已刷新，请重新决定');
   }
 }
 
-export async function menu(store: Session): Promise<void> {
-  if (store.server === 'local') {
-    console.log(pathLabel(styleText('dim', '数据目录'), maskHomePath(store.home, store.userHome)));
-  } else console.log(pathLabel(styleText('dim', '服务地址'), store.url));
+export async function menu(store: Session, version = ''): Promise<void> {
   const authPath = tildify(store, store.codexAuthPath);
-  console.log(pathLabel(styleText('dim', '登录文件'), authPath));
+  let previous: MainAction | undefined;
   for (;;) {
     const credentials = await store.list();
     const current = await store.current();
@@ -426,10 +394,11 @@ export async function menu(store: Session): Promise<void> {
     const action = await escapable((context) =>
       select(
         {
-          message: `${renderStatus(current, credentials.length, authPath)}\n\n${styleText('cyan', '?')} ${styleText('bold', '要做什么？')}`,
+          message: (columns) => renderHome(current, credentials.length, version, columns),
+          compactMessage: homeSummary(current, credentials.length),
           choices: menu.choices,
-          default: menu.default,
-          theme: menuTheme(),
+          default: menu.choices.some((item) => 'value' in item && item.value === previous && !item.disabled) ? previous : menu.default,
+          theme: selectTheme('退出'),
         },
         context,
       ),
@@ -438,9 +407,15 @@ export async function menu(store: Session): Promise<void> {
       console.log(`${styleText('dim', '当前账号')}  ${describeCurrent(current, authPath)}\n`);
       return;
     }
-
+    previous = action;
     try {
-      if (action === 'delete') {
+      if (action === 'details') {
+        const home = maskHomePath(store.home, store.userHome);
+        const connection = `${store.server === 'local' ? '自带服务端' : '独立服务端'} ${store.url}`;
+        await escapable((context) => select({ message: renderLocations(home, authPath, connection),
+          compactMessage: (columns) => locationSummary(home, authPath, connection, columns),
+          choices: [{ value: 'back', name: '返回' }], theme: selectTheme('返回') }, context));
+      } else if (action === 'delete') {
         await deleteFlow(store, credentials, current);
       } else if (action === 'info') {
         await accountInfoFlow(store);

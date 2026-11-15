@@ -15,15 +15,18 @@ test('有运行中的进程时显示 PID，默认取消且不修改当前凭证'
   const current = '{"tokens":{"access_token":"fake-current-access"}}';
   await writeFile(store.codexAuthPath, current);
   const messages: string[] = [];
+  let detail = '';
   let asked = false;
 
   await switchCredential(store, credential, {
     findProcesses: async () => [{ pid: 4401, command: 'codex' }, { pid: 4402, command: 'Codex' }],
     ask: async (options) => {
       asked = true;
+      detail = options.detail;
       assert.equal(options.default, false);
-      assert.ok(messages.some((message) => message.includes('4401')));
-      assert.ok(messages.some((message) => message.includes('4402')));
+      assert.ok(options.detail.includes('4401') && options.detail.includes('4402'));
+      assert.equal(options.count, 2);
+      assert.equal(messages.length, 0);
       return options.default;
     },
     log: (message) => messages.push(message),
@@ -32,7 +35,7 @@ test('有运行中的进程时显示 PID，默认取消且不修改当前凭证'
   assert.equal(asked, true);
   assert.equal(await readFile(store.codexAuthPath, 'utf8'), current);
   assert.match(messages.at(-1) ?? '', /已取消切换/u);
-  assert.ok(messages.some((message) => message.includes('不代表任务正忙')));
+  assert.ok(detail.includes('不代表任务正忙'));
 });
 
 test('明确确认后才执行切换', async () => {
@@ -103,16 +106,16 @@ test('更新本机登录时，进程确认使用更新文案并说明会改写�
   assert.equal(await confirmRunningCodex({
     action: 'update',
     findProcesses: async () => [{ pid: 4601, command: 'codex' }],
-    ask: async ({ message, action, default: answer }) => {
+    ask: async ({ message, detail, action, default: answer }) => {
       assert.equal(message, '仍要更新本机登录吗？');
       assert.equal(action, 'update');
+      assert.ok(detail.includes('现在更新会改写本机登录文件：'));
+      assert.ok(detail.includes('  ~/.codex/auth.json'));
+      assert.ok(detail.includes('建议先退出 Codex。'));
       return answer;
     },
     log: (message) => messages.push(message),
   }), false);
-  assert.ok(messages.includes('现在更新会改写本机登录文件：'));
-  assert.ok(messages.includes('  ~/.codex/auth.json'));
-  assert.ok(messages.includes('建议先退出 Codex。'));
   assert.match(messages.at(-1)!, /已取消更新/u);
   assert.ok(messages.every((message) => !message.includes('切换')));
 });

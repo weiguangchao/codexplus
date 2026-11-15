@@ -62,8 +62,11 @@ test('Session 删除损坏账号，删除菜单显示说明，未列出的账号
   await writeFile(join(client.home, 'credentials', 'codex-person@example.com', 'auth.json'), '{broken');
   const credentials = await session.list();
   const choices = deleteChoices(credentials, (email) => session.snapshotDigest(email));
-  assert.equal(choices[0]?.description, '服务端保存的凭证文件缺失或损坏');
-  assert.equal(deleteChoices(credentials, () => 'healthy')[0]?.description, undefined);
+  const first = choices[0];
+  const healthy = deleteChoices(credentials, () => 'healthy')[0];
+  assert.ok(first && 'value' in first && healthy && 'value' in healthy);
+  assert.equal(first.description, '账号库中的凭证文件缺失或损坏');
+  assert.equal(healthy.description, undefined);
   await session.delete(credential);
   assert.deepEqual(await session.list(), []);
   await assert.rejects(session.delete(credential), /账号列表已变化/u);

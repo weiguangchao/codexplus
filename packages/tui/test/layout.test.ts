@@ -3,8 +3,35 @@ import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
+import { styleText } from 'node:util';
 import { pathWindow } from '../src/path-input.js';
-import { displayWidth, fitPath, line as renderLine, pathLabel, wrapWords } from '../src/ui.js';
+import { displayWidth, fit, fitPath, line as renderLine, pathLabel, wrapWords } from '../src/ui.js';
+
+test('长 URL 按宽度换行，ANSI 格式和 emoji 字素保持完整', () => {
+  const source = 'https://auth.openai.com/authorize?state=' + 'x'.repeat(90);
+  const shown = wrapWords(source, 24);
+  assert.equal(shown.replaceAll('\n', ''), source);
+  for (const line of shown.split('\n')) assert.ok(displayWidth(line) <= 24);
+  const colored = styleText('cyan', '开发👩🏽‍💻账号选择', { validateStream: false });
+  assert.equal(stripVTControlCharacters(fit(colored, 9)), '开发👩🏽‍💻账…');
+  const wrapped = wrapWords(colored, 8);
+  assert.equal(stripVTControlCharacters(wrapped).replaceAll('\n', ''), '开发👩🏽‍💻账号选择');
+  assert.ok(wrapped.includes('👩🏽‍💻'));
+  for (const line of wrapped.split('\n')) assert.ok(displayWidth(line) <= 8);
+});
+
+test('重复排版保留段落缩进和悬挂缩进，带 ANSI 样式时也保持层级', () => {
+  const text = styleText('dim', '  本机刷新时间：2026-11-15T08:00:00Z\n  服务端刷新时间：未知', { validateStream: false });
+  for (const width of [24, 40, 80]) {
+    const wrapped = wrapWords(text, width);
+    const again = wrapWords(wrapped, width);
+    assert.equal(again, wrapped);
+    for (const line of stripVTControlCharacters(wrapped).split('\n')) {
+      assert.ok(line.startsWith('  '), line);
+      assert.ok(displayWidth(line) <= width, line);
+    }
+  }
+});
 
 test('长路径保留首尾，文件名可容纳时完整显示，兼容中文和 Windows 分隔符', () => {
   for (const path of ['/tmp/a/very/long/directory/auth.json', 'C:\\Users\\someone\\a-long-directory\\auth.json', '/目录/很长的目录/另一个目录/auth.json']) {

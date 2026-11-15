@@ -6,7 +6,7 @@ import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { menu, switchAccount } from './flows.js';
 import { confirmRestore, confirmUpload, isCancel, requireInteractive } from './prompts.js';
-import { cancelled, line, maskEmail, maskHomePath, renderStatus, renderTitle, symbols } from './ui.js';
+import { cancelled, line, maskEmail, maskHomePath, renderStatus, symbols } from './ui.js';
 
 function readVersion(): string {
   try {
@@ -27,7 +27,6 @@ async function main(): Promise<void> {
     requireInteractive();
   }
 
-  if (command.kind === 'client') console.log(renderTitle(readVersion()));
   const client = new CredentialClient({ home: command.home });
   const store = await client.connect({
     ...(command.port === undefined ? {} : { port: command.port }),
@@ -37,7 +36,7 @@ async function main(): Promise<void> {
   store.confirmRestore = confirmRestore;
   try {
     if (command.kind === 'client') {
-      await menu(store);
+      await menu(store, readVersion());
     } else if (command.kind === 'switch') {
       await switchAccount(store, command.email);
     } else {

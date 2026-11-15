@@ -1,9 +1,10 @@
-import { select } from '@inquirer/prompts';
+import { select } from './select.js';
 import { stripVTControlCharacters, styleText } from 'node:util';
 import type { Credential, CurrentLogin, ResetCard } from '@weiguangchao/codexplus-shared';
 import type { Session } from './client.js';
 import { BACK, escapable } from './prompts.js';
 import { maskEmail, report, resetCardChoices, selectTheme, symbols, withSpinner } from './ui.js';
+import { stepTitle } from './screens.js';
 
 interface ResetCardPrompts {
   account(credentials: Credential[], current: CurrentLogin): Promise<Credential | null | typeof BACK>;
@@ -27,22 +28,22 @@ export function resetCardDetails(card: ResetCard): string {
 
 const prompts: ResetCardPrompts = {
   account: async (credentials, current) => await escapable((context) => select({
-    message: '为哪个账号使用 Codex 重置卡？',
+    message: stepTitle('使用重置卡', '选择账号', '使用所选账号的重置卡，无需切换登录。'),
     choices: resetCardChoices(credentials, current),
     theme: selectTheme('返回'),
-    pageSize: 10,
+    searchable: true,
   }, context)),
   card: async (credential, cards) => await escapable((context) => select({
-    message: `为 ${styleText('cyan', maskEmail(credential.email))} 选择重置卡`,
+    message: stepTitle('使用重置卡', `为 ${maskEmail(credential.email)} 选择重置卡`),
     choices: [...cards.map((card, index) => ({ value: card as ResetCard | null, name: resetCardName(card, index), description: resetCardDetails(card) })),
       { value: null, name: '返回', description: '重新选择账号' }],
     theme: selectTheme('返回'),
     pageSize: 10,
   }, context)),
   confirm: async (credential, card) => await escapable((context) => select({
-    message: `确认为 ${styleText('cyan', maskEmail(credential.email))} 使用「${resetCardName(card)}」？\n  ${resetCardDetails(card)}\n  ${styleText('yellow', '确认后将消耗这张重置卡，无法撤销。')}`,
+    message: stepTitle('使用重置卡 / 确认使用', `为 ${maskEmail(credential.email)} 使用「${resetCardName(card)}」？`, `  ${resetCardDetails(card)}\n  ${styleText('yellow', '确认后将消耗这张重置卡，无法撤销。')}`),
     choices: [{ value: false, name: '取消', description: '返回重置卡列表' },
-      { value: true, name: '使用重置卡', description: '消耗所选重置卡，重置该账号符合条件的用量' }],
+      { value: true, name: '使用重置卡', tone: 'danger', description: '消耗所选重置卡，重置该账号符合条件的用量' }],
     default: false,
     theme: selectTheme('取消'),
   }, context)),

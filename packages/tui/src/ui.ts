@@ -1,18 +1,18 @@
-import figures, { mainSymbols } from '@inquirer/figures';
+import figures from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
-import stringWidth from 'fast-string-width';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
 import { newerRefresh } from '@weiguangchao/codexplus-shared';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
+import { displayWidth, fit, wrapWords } from './text-layout.js';
+import { glyph, unicode } from './terminal-symbols.js';
+export { displayWidth, fit, wrapWords } from './text-layout.js';
 
-export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'info' | 'reset' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'info' | 'reset' | 'details' | 'exit';
 export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
-const unicode = figures.tick === mainSymbols.tick;
-const dots = { filled: unicode ? '●' : figures.circleFilled, empty: unicode ? '○' : figures.circle };
+const dots = { filled: glyph.filled, empty: glyph.empty };
 const currentLabel = () => styleText('green', `${dots.filled} 当前`);
-const keyLabels: Record<string, string> = { navigate: '移动', select: '确认' };
 
 export const symbols = {
   success: styleText('green', figures.tick),
@@ -21,32 +21,15 @@ export const symbols = {
   info: styleText('cyan', figures.info),
 };
 
-const divider = () => new Separator(styleText('dim', ` ${figures.line.repeat(6)}`));
-const prefix = { idle: styleText('cyan', '?'), done: styleText('green', figures.tick) };
+const divider = (label = '') => new Separator(label || figures.line.repeat(6));
+const prefix = { idle: styleText('cyan', glyph.cursor), done: styleText('green', figures.tick) };
 const error = (text: string) => `${symbols.failure} ${styleText('red', wrapWords(text, (process.stdout.columns || 80) - 2).replaceAll('\n', '\n  '))}`;
 
 export function selectTheme(escapeLabel: string) {
-  return {
-    prefix,
-    style: {
-      error,
-      disabled: (text: string) => styleText('dim', text.replace(/^- /u, '  ')),
-      description: (text: string) => styleText('dim', wrapWords(text, (process.stdout.columns || 80) - 2)),
-      keysHelpTip: (keys: [string, string][]) =>
-        [...keys, ['esc', escapeLabel] as [string, string]]
-          .map(([key, action]) => `${styleText('bold', key)} ${styleText('dim', keyLabels[action] ?? action)}`)
-          .join(styleText('dim', ' · ')),
-    },
-    i18n: { disabledError: '该选项暂不可用，原因见上方说明。' },
-  };
+  return { escapeLabel };
 }
 
 export const inputTheme = { prefix, style: { error } };
-
-export function menuTheme(escapeLabel = '退出') {
-  const theme = selectTheme(escapeLabel);
-  return { ...theme, prefix: { idle: '', done: '' }, style: { ...theme.style, message: (text: string) => text } };
-}
 
 function activeEmail(current: CurrentLogin): string | null {
   return current.status === 'saved' || current.status === 'ahead' ? current.email : null;
@@ -79,14 +62,14 @@ export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth
     return `${dot('green')} ${styleText('bold', maskEmail(current.email))}`;
   }
   if (current.status === 'behind' || current.status === 'diverged') {
-    const note = current.status === 'behind' ? '服务端有更新版本' : '与服务端版本不一致';
+    const note = current.status === 'behind' ? '账号库有更新版本' : '与账号库版本不一致';
     return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', note)}`;
   }
   if (current.status === 'ahead') {
     return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '有更新未保存')}`;
   }
   if (current.status === 'deleted') {
-    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('dim', '已从凭证库删除，本机登录保留')}`;
+    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('dim', '已从账号库删除，本机登录保留')}`;
   }
   if (current.status === 'unsaved') {
     return current.email === null
@@ -97,11 +80,6 @@ export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth
     return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
   }
   return styleText('dim', `${dots.empty} 未登录\n  未找到登录文件：\n  ${fitPath(authPath, (process.stdout.columns || 80) - 2)}`);
-}
-
-export function renderTitle(version: string): string {
-  const versionLabel = version ? ` ${styleText('dim', `v${version}`)}` : '';
-  return `\n${styleText(['bold', 'cyan'], 'codexplus')}${versionLabel}\n`;
 }
 
 export function renderStatus(current: CurrentLogin, count: number, authPath = '~/.codex/auth.json'): string {
@@ -131,42 +109,48 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin, au
           : current.status === 'ahead'
             ? '当前登录有更新，可以重新保存以更新凭证。'
             : current.status === 'diverged'
-              ? '当前登录与服务端保存的版本不一致，可以选择保留哪一份。'
+              ? '当前登录与账号库中保存的版本不一致，可以选择保留哪一份。'
               : '通过浏览器登录或导入 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
     ...(current.status === 'behind'
-      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${maskEmail(current.email)} 新版本，写入 ${authPath}` }]
+      ? [{ value: 'update' as const, name: '更新本机登录', key: 'u', description: `使用账号库中 ${maskEmail(current.email)} 的新版本，写入 ${authPath}` }]
       : []),
     {
       value: 'switch' as const,
       name: '切换账号',
+      key: 's',
       description: switchDescription,
       disabled: others === 0 ? styleText('dim', credentials.length === 0 ? '(暂无账号)' : '(没有其他账号)') : false,
     },
-    { value: 'add' as const, name: '添加账号', description: addDescription },
-    {
-      value: 'delete' as const,
-      name: '删除账号',
-      description: '从服务端删除一个已保存的账号，本机登录不受影响',
-      disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
-    },
+    { value: 'add' as const, name: '添加账号', key: 'a', description: addDescription },
     {
       value: 'info' as const,
       name: '查看账户信息',
+      key: 'i',
       description: '查看当前账户的套餐、到期时间和五小时、每周剩余额度',
       disabled: current.status === 'none' || current.status === 'invalid' ? styleText('dim', '(未登录或登录无效)') : false,
     },
     {
       value: 'reset' as const,
       name: '使用 Codex 重置卡',
+      key: 'r',
       description: '先选择账号，再选择该账号的可用重置卡，确认后重置用量',
       disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
     },
-    divider(),
-    { value: 'exit' as const, name: '退出', description: '退出 codexplus' },
+    divider('账号管理'),
+    {
+      value: 'delete' as const,
+      name: '删除账号',
+      key: 'd',
+      tone: 'danger' as const,
+      description: '从账号库删除已保存的凭证。需要再次确认，本机登录保留。',
+      disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
+    },
+    { value: 'details' as const, name: '位置与连接', key: 'p', description: '查看账号库位置、当前登录文件与本机服务连接' },
+    { value: 'exit' as const, name: '退出', key: 'q', description: '退出 codexplus' },
   ];
   const fallback: MainAction = others === 0 || needsBackup(current) ? 'add' : 'switch';
-  const defaultAction: MainAction = current.status === 'invalid' ? others > 0 ? 'switch' : 'exit'
+  const defaultAction: MainAction = current.status === 'invalid' ? others > 0 ? 'switch' : 'add'
     : current.status === 'deleted' ? 'exit' : current.status === 'behind' ? 'update' : fallback;
   return { choices, default: defaultAction };
 }
@@ -180,7 +164,7 @@ export function refreshDetails(local: unknown, server: unknown, localLabel = '�
   return `${localLabel}刷新时间：${time(local)}\n  服务端刷新时间：${time(server)}\n  ${advice}`;
 }
 
-export function switchChoices(credentials: Credential[], current: CurrentLogin) {
+export function switchChoices(credentials: Credential[], current: CurrentLogin, digest?: (email: string) => string | null) {
   const active = activeEmail(current);
   const choices = [
     ...credentials.map((credential) =>
@@ -191,12 +175,13 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin) 
             description: '这是正在使用的账号',
             disabled: currentLabel(),
           }
-        : { value: credential as Credential | null, name: maskEmail(credential.email) },
+        : { value: credential as Credential | null, name: maskEmail(credential.email),
+          ...(digest?.(credential.email) === null ? { disabled: '(凭证不可用)', description: '保存的凭证文件缺失或损坏，请重新添加该账号。' } : {}) },
     ),
     divider(),
     { value: null, name: '返回', description: '回到主菜单' },
   ];
-  const first = credentials.find((credential) => credential.email !== active) ?? null;
+  const first = credentials.find((credential) => credential.email !== active && (!digest || digest(credential.email) !== null)) ?? null;
   return { choices, default: first };
 }
 
@@ -219,8 +204,9 @@ export function deleteChoices(credentials: Credential[], digest: (email: string)
     ...credentials.map((credential) => ({
       value: credential as Credential | null,
       name: maskEmail(credential.email),
-      ...(digest(credential.email) === null ? { description: '服务端保存的凭证文件缺失或损坏' } : {}),
+      ...(digest(credential.email) === null ? { description: '账号库中的凭证文件缺失或损坏' } : {}),
     })),
+    divider(),
     { value: null, name: '返回', description: '回到主菜单' },
   ];
 }
@@ -281,48 +267,8 @@ export function pathLabel(label: string, path: string, columns = process.stdout.
   return displayWidth(inline) <= columns ? inline : `${label}\n  ${fitPath(path, columns - 2)}`;
 }
 
-export function wrapWords(text: string, columns: number): string {
-  const width = Math.max(1, columns);
-  const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
-  return text.split('\n').map((paragraph) => {
-    const words: string[] = [];
-    for (const { segment } of segmenter.segment(paragraph)) {
-      const previous = words.at(-1);
-      if (previous && (/^[，。；：！？、）】》」』,.!?;:]+$/u.test(segment) || /^[\w~./\\:@+-]+$/u.test(segment) && /^[\w~./\\:@+-]+$/u.test(previous))) words[words.length - 1] += segment;
-      else words.push(segment);
-    }
-    const lines: string[] = [];
-    let line = '';
-    for (const word of words) {
-      if (line && displayWidth(line + word) > width) { lines.push(line.trimEnd()); line = ''; }
-      line += line ? word : word.trimStart();
-    }
-    lines.push(line.trimEnd());
-    return lines.join('\n');
-  }).join('\n');
-}
-
 export function report(symbol: string, text: string, detail?: string): void {
   console.log(`${line(symbol, text, detail)}\n`);
-}
-
-export function displayWidth(text: string): number {
-  return stringWidth(text);
-}
-
-export function fit(text: string, columns: number): string {
-  const characters = Array.from(text);
-  const widths = characters.map((character) => displayWidth(character));
-  if (widths.reduce((total, width) => total + width, 0) <= columns) {
-    return text;
-  }
-  let width = 1;
-  let count = 0;
-  while (count < characters.length && width + (widths[count] ?? 0) <= columns) {
-    width += widths[count] ?? 0;
-    count++;
-  }
-  return `${characters.slice(0, count).join('')}…`;
 }
 
 export function cancelled(): void {
