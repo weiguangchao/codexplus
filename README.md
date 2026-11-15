@@ -113,7 +113,11 @@ codexplus status --port 47831
 
 删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。
 
-**使用 Codex 重置卡**位于「删除账号」之后。先从已保存的账号中选择（包括当前账号），再查询该账号的可用重置卡；每张卡片名称后直接显示过期时间，按过期时间由近到远排列，未提供过期时间的卡片排在最后并标注「过期时间：未提供」。选中卡片时下方还显示说明、获得时间和到期时间；已使用、处理中和已到期的卡片不列出。无可用卡片时可以改选账号。选卡后再次确认，默认取消；Esc 从确认返回卡片列表，从卡片列表返回账号列表，从账号列表回到主菜单。确认后仅使用所选卡片，结果区分成功、此前已成功、当前无需重置和无可用次数，不自动重试或改用另一张卡；网络异常时提示先查看用量和卡片状态。同一客户端会话内，对结果未知的同一账号、同一卡片再次发起请求时沿用原请求 ID。此功能不切换账号、不改写当前登录文件。
+**查看账户信息**位于「删除账号」之后，直接展示当前登录账号的脱敏邮箱、套餐、到期时间、五小时及每周剩余额度和重置时间。进度条表示剩余额度，日期按本地时区显示；可选择「刷新」重新查询，选择「返回」或按 Esc 回主菜单。未登录或登录无效时不可进入；当前登录未保存、已从凭证库删除或与保存版本不一致时仍可查询，始终使用当前登录文件，不切换账号或修改凭证。
+
+额度来自 `GET https://chatgpt.com/backend-api/wham/usage`，按 `limit_window_seconds` 区分五小时与每周窗口，不按 primary/secondary 的位置猜测。字段对照 [Codex 官方额度模型](https://github.com/openai/codex/blob/ee344ca9458351a6ea102795fa73110ad3ede5dc/codex-rs/codex-backend-openapi-models/src/models/rate_limit_window_snapshot.rs)。套餐到期时间独立读取 `GET https://chatgpt.com/backend-api/subscriptions?account_id=...` 的 `active_until`，不使用 JWT 有效期、登录时的订阅快照或额度重置时间代替。缺失窗口或到期时间显示「未提供」；订阅查询失败仍展示成功取得的额度。接口仅使用已有 access token，不刷新 token；TUI 只接收账户信息，不接收凭证。
+
+**使用 Codex 重置卡**位于「查看账户信息」之后。先从已保存的账号中选择（包括当前账号），再查询该账号的可用重置卡；每张卡片名称后直接显示过期时间，按过期时间由近到远排列，未提供过期时间的卡片排在最后并标注「过期时间：未提供」。选中卡片时下方还显示说明、获得时间和到期时间；已使用、处理中和已到期的卡片不列出。无可用卡片时可以改选账号。选卡后再次确认，默认取消；Esc 从确认返回卡片列表，从卡片列表返回账号列表，从账号列表回到主菜单。确认后仅使用所选卡片，结果区分成功、此前已成功、当前无需重置和无可用次数，不自动重试或改用另一张卡；网络异常时提示先查看用量和卡片状态。同一客户端会话内，对结果未知的同一账号、同一卡片再次发起请求时沿用原请求 ID。此功能不切换账号、不改写当前登录文件。
 
 重置卡查询和使用由服务端读取所选账号保存的凭证完成，TUI 仅接收卡片信息及使用结果。接口与字段对照 [Codex 官方 backend-client 源码](https://github.com/openai/codex/blob/ee344ca9458351a6ea102795fa73110ad3ede5dc/codex-rs/backend-client/src/client/rate_limit_resets.rs)：查询 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`，使用 `POST .../consume`，提交指定的 `credit_id` 和幂等字段 `redeem_request_id`。与账号查询相同，仅发送已有 access token 和可选的 `ChatGPT-Account-Id`，不自行刷新 token；接口变化或凭证过期会显示错误。
 
@@ -194,6 +198,7 @@ HTTP 协议版本为 4；连接前检查服务名称和版本，不兼容时不�
 | POST /v1/login/browser/save | 按 id 保存服务端持有的凭证，可带 base、restore |
 | POST /v1/login/browser/cancel | 按 id 取消并清理本次登录 |
 | GET /v1/credentials | 账号、摘要、lastRefresh |
+| GET /v1/login/account-info | 当前登录账号的套餐、到期时间、五小时及每周剩余额度，不含凭证 |
 | POST /v1/credentials | 上传 `{ auth, base }` |
 | POST /v1/credentials/download | 按 type、email 下载 |
 | POST /v1/credentials/delete | 按 type、email、base（摘要或 null，必填）条件删除 |

@@ -1,5 +1,5 @@
-import { isRecord, parseCredential, parseResetCard, parseResetCardOutcome, requestService, parsePort, protocolVersion, ServiceError } from '@weiguangchao/codexplus-shared';
-import type { Credential, CurrentLogin, ResetCard, ResetCardOutcome, UploadResult } from '@weiguangchao/codexplus-shared';
+import { isRecord, parseAccountInfo, parseCredential, parseResetCard, parseResetCardOutcome, requestService, parsePort, protocolVersion, ServiceError } from '@weiguangchao/codexplus-shared';
+import type { AccountInfo, Credential, CurrentLogin, ResetCard, ResetCardOutcome, UploadResult } from '@weiguangchao/codexplus-shared';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +65,10 @@ export class Session {
   }
 
   snapshotDigest(email: string): string | null { return this.digests.get(email) ?? null; }
+
+  async accountInfo(): Promise<AccountInfo> {
+    return parseAccountInfo(await this.request('/v1/login/account-info', undefined, 35_000));
+  }
 
   async refreshTimes(email: string): Promise<{ local: unknown; server: unknown }> {
     const result = await this.request('/v1/login/refresh-times', { type: 'codex', email });

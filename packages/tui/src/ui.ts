@@ -6,7 +6,7 @@ import { styleText } from 'node:util';
 import { newerRefresh } from '@weiguangchao/codexplus-shared';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 
-export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'reset' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'info' | 'reset' | 'exit';
 export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
@@ -43,8 +43,8 @@ export function selectTheme(escapeLabel: string) {
 
 export const inputTheme = { prefix, style: { error } };
 
-export function menuTheme() {
-  const theme = selectTheme('退出');
+export function menuTheme(escapeLabel = '退出') {
+  const theme = selectTheme(escapeLabel);
   return { ...theme, prefix: { idle: '', done: '' }, style: { ...theme.style, message: (text: string) => text } };
 }
 
@@ -149,6 +149,12 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin, au
       name: '删除账号',
       description: '从服务端删除一个已保存的账号，本机登录不受影响',
       disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
+    },
+    {
+      value: 'info' as const,
+      name: '查看账户信息',
+      description: '查看当前账户的套餐、到期时间和五小时、每周剩余额度',
+      disabled: current.status === 'none' || current.status === 'invalid' ? styleText('dim', '(未登录或登录无效)') : false,
     },
     {
       value: 'reset' as const,
