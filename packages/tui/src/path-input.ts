@@ -1,6 +1,9 @@
 import { createPrompt, isEnterKey, makeTheme, useEffect, useKeypress, usePrefix, useRef, useState } from '@inquirer/core';
 import { styleText } from 'node:util';
-import { displayWidth, inputTheme, wrapWords } from './ui.js';
+import { inputTheme } from './ui.js';
+import { stepTitle } from './screens.js';
+import { displayWidth, keyHelp, wrapWords } from './text-layout.js';
+import { glyph } from './terminal-symbols.js';
 
 export function pathWindow(value: string, cursor: number, columns: number): { text: string; cursor: number } {
   const points = Array.from(value);
@@ -13,8 +16,8 @@ export function pathWindow(value: string, cursor: number, columns: number): { te
   while (start > 0 && used + displayWidth(points[start - 1]!) <= Math.floor(width * 2 / 3) - 1) used += displayWidth(points[--start]!);
   while (end < points.length && used + displayWidth(points[end]!) <= width - 2) used += displayWidth(points[end++]!);
   while (start > 0 && used + displayWidth(points[start - 1]!) <= width - 2) used += displayWidth(points[--start]!);
-  const prefix = start > 0 ? '‹' : '';
-  return { text: prefix + points.slice(start, end).join('') + (end < points.length ? '›' : ''), cursor: prefix.length + points.slice(start, position).join('').length };
+  const prefix = start > 0 ? glyph.left : '';
+  return { text: prefix + points.slice(start, end).join('') + (end < points.length ? glyph.right : ''), cursor: prefix.length + points.slice(start, position).join('').length };
 }
 
 interface PathConfig {
@@ -76,7 +79,7 @@ export const pathInput = createPrompt<string, PathConfig>((config, done) => {
     setError('');
   });
   return [
-    `${prefix} ${wrapWords('auth.json 路径 (esc 返回)', (process.stdout.columns || 80) - 2)}\n${view.text}`,
-    error ? inputTheme.style.error(error) : styleText('dim', '← → 移动光标 · esc 返回'),
+    `${stepTitle('添加账号', '导入 auth.json', (process.stdout.rows || 24) < 16 ? '' : '粘贴或拖入文件，支持 ~/ 和带空格的路径。')}\n${prefix} ${wrapWords(status === 'loading' ? '正在检查文件…' : 'auth.json 路径', (process.stdout.columns || 80) - 2)}\n${view.text}`,
+    [error ? inputTheme.style.error(error) : '', styleText('dim', keyHelp(['Enter 添加', 'Ctrl+U 清空左侧', 'Esc 返回'], (process.stdout.columns || 80) - 1).join('\n'))].filter(Boolean).join('\n'),
   ];
 });

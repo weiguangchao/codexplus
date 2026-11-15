@@ -85,7 +85,7 @@ test('删除当前账号保留本机登录且默认退出，再次保存必须�
   await session.delete(credential);
   const current = await session.current();
   assert.deepEqual(current, { status: 'deleted', email });
-  assert.match(renderStatus(current, 0), /已从凭证库删除，本机登录保留/u);
+  assert.match(renderStatus(current, 0), /已从账号库删除，本机登录保留/u);
   assert.equal(mainChoices([], current).default, 'exit');
   await assert.rejects(session.add(session.codexAuthPath), UploadCancelled);
   session.confirmRestore = async (restoring) => { assert.equal(restoring, email); return false; };

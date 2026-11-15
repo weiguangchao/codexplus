@@ -2,19 +2,47 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
 import type { AccountInfo } from '@weiguangchao/codexplus-shared';
-import { accountInfoFlow, renderAccountInfo } from '../src/account-info.js';
+import { accountInfoConfig, accountInfoFlow, renderAccountInfo } from '../src/account-info.js';
 import { BACK } from '../src/prompts.js';
 import { displayWidth, mainChoices } from '../src/ui.js';
+import { renderSelect } from '../src/select-layout.js';
 
 const now = Date.parse('2026-11-15T08:00:00Z');
 const info: AccountInfo = { email: 'developer@example.com', planType: 'plus', expiresAt: '2030-12-15T15:59:00Z',
   fiveHour: { remainingPercent: 68, resetsAt: new Date(now + 138 * 60_000).toISOString() },
   weekly: { remainingPercent: 42, resetsAt: '2026-11-19T01:00:00Z' } };
 
-test('删除账号后显示查看账户信息，按当前登录状态而非凭证库是否为空决定可用性', () => {
+test('中等高度保留到期和重置时间，最小视口仍保留两种额度并保持告警颜色', (context) => {
+  const previous = { force: process.env.FORCE_COLOR, noColor: process.env.NO_COLOR };
+  delete process.env.NO_COLOR;
+  process.env.FORCE_COLOR = '1';
+  context.after(() => {
+    if (previous.force === undefined) delete process.env.FORCE_COLOR; else process.env.FORCE_COLOR = previous.force;
+    if (previous.noColor === undefined) delete process.env.NO_COLOR; else process.env.NO_COLOR = previous.noColor;
+  });
+  const low = { ...info, fiveHour: { ...info.fiveHour!, remainingPercent: 8 }, weekly: { ...info.weekly!, remainingPercent: 18 } };
+  const config = accountInfoConfig(low, now);
+  for (const [columns, rows] of [[120, 17], [80, 17], [40, 16], [24, 8]] as const) {
+    const raw = renderSelect(config, { active: 0, query: '', error: '' }, columns, rows);
+    const text = stripVTControlCharacters(raw);
+    assert.ok(text.includes('8%') && text.includes('18%'));
+    assert.ok(raw.includes('\x1b[31m8%\x1b[39m'));
+    assert.ok(raw.includes('\x1b[33m18%\x1b[39m'));
+    assert.ok(text.includes('刷新') && text.includes('返回'));
+    assert.ok(text.split('\n').length < rows);
+    if (rows > 8) {
+      assert.ok(text.includes('到期时间'));
+      assert.match(text, /2 小时 18 分后重置/u);
+      assert.match(text, /2026-11-\d{2} .*重置/u);
+    }
+  }
+});
+
+test('账户信息优先于账号管理，按当前登录状态而非凭证库是否为空决定可用性', () => {
   const choices = mainChoices([], { status: 'unsaved', email: null }).choices;
-  const index = choices.findIndex((choice) => 'value' in choice && choice.value === 'delete');
-  const choice = choices[index + 1];
+  const index = choices.findIndex((choice) => 'value' in choice && choice.value === 'info');
+  assert.ok(index < choices.findIndex((choice) => 'value' in choice && choice.value === 'delete'));
+  const choice = choices[index];
   assert.ok(choice && 'value' in choice && choice.value === 'info');
   assert.equal(choice.name, '查看账户信息');
   assert.equal(choice.disabled, false);
