@@ -44,7 +44,6 @@ async function main(): Promise<void> {
       const credentials = await store.list();
       const current = await store.current();
       if (command.kind === 'status') {
-        console.log('运行模式  本地模式');
         console.log(store.server === 'local' ? `数据目录  ${store.home}` : `服务地址  ${store.url}`);
         console.log(`登录文件  ${store.codexAuthPath}`);
         console.log(renderStatus(current, credentials.length, store.codexAuthPath));
