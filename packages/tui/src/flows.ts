@@ -442,7 +442,7 @@ export async function menu(store: Session): Promise<void> {
       if (action === 'delete') {
         await deleteFlow(store, credentials, current);
       } else if (action === 'reset') {
-        await resetCardFlow(store, credentials);
+        await resetCardFlow(store, credentials, current);
       } else if (action === 'update') {
         if (current.status === 'behind') {
           await downloadCurrent(store, current.email);

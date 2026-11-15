@@ -1,12 +1,12 @@
 import { select } from '@inquirer/prompts';
 import { stripVTControlCharacters, styleText } from 'node:util';
-import type { Credential, ResetCard } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin, ResetCard } from '@weiguangchao/codexplus-shared';
 import type { Session } from './client.js';
 import { BACK, escapable } from './prompts.js';
-import { maskEmail, report, selectTheme, symbols, withSpinner } from './ui.js';
+import { maskEmail, report, resetCardChoices, selectTheme, symbols, withSpinner } from './ui.js';
 
 interface ResetCardPrompts {
-  account(credentials: Credential[]): Promise<Credential | null | typeof BACK>;
+  account(credentials: Credential[], current: CurrentLogin): Promise<Credential | null | typeof BACK>;
   card(credential: Credential, cards: ResetCard[]): Promise<ResetCard | null | typeof BACK>;
   confirm(credential: Credential, card: ResetCard): Promise<boolean | typeof BACK>;
 }
@@ -26,10 +26,9 @@ export function resetCardDetails(card: ResetCard): string {
 }
 
 const prompts: ResetCardPrompts = {
-  account: async (credentials) => await escapable((context) => select({
+  account: async (credentials, current) => await escapable((context) => select({
     message: '为哪个账号使用 Codex 重置卡？',
-    choices: [...credentials.map((credential) => ({ value: credential as Credential | null, name: maskEmail(credential.email) })),
-      { value: null, name: '返回', description: '回到主菜单' }],
+    choices: resetCardChoices(credentials, current),
     theme: selectTheme('返回'),
     pageSize: 10,
   }, context)),
@@ -49,13 +48,13 @@ const prompts: ResetCardPrompts = {
   }, context)),
 };
 
-export async function resetCardFlow(store: Pick<Session, 'resetCards' | 'useResetCard'>, credentials: Credential[], ask = prompts): Promise<void> {
+export async function resetCardFlow(store: Pick<Session, 'resetCards' | 'useResetCard'>, credentials: Credential[], current: CurrentLogin, ask = prompts): Promise<void> {
   if (credentials.length === 0) {
     report(symbols.info, '还没有保存的账号，请先添加。');
     return;
   }
   for (;;) {
-    const account = await ask.account(credentials);
+    const account = await ask.account(credentials, current);
     if (account === BACK || account === null) return;
     const cards = await withSpinner('正在查询该账号的 Codex 重置卡…', () => store.resetCards(account));
     if (cards.length === 0) {
