@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { startServer } from '@weiguangchao/codexplus-server';
 import { writeAtomic } from '@weiguangchao/codexplus-shared';
 import { CredentialClient } from '../src/client.js';
-import { confirmRunningCodex } from '../src/switch.js';
+import { confirmRunningCodex, switchCredential } from '../src/switch.js';
 import { account, temporaryHome } from './helpers.js';
 
 const email = 'person@example.com';
@@ -95,4 +95,36 @@ test('损坏的服务端同步状态会阻止切换，当前登录保持原样',
   await writeAtomic(join(root, 'login.json'), '{broken');
   await assert.rejects(session.switch(credential), /格式无效/u);
   assert.equal(await readFile(session.codexAuthPath, 'utf8'), before);
+});
+
+test('选择切换并重启时由服务端重启对应 CODEX_HOME，普通切换和取消不重启', async (context) => {
+  const root = await temporaryHome(context);
+  const codexHome = join(root, 'server-codex');
+  let restarted = 0;
+  let failRestart = false;
+  const server = await startServer({ home: join(root, 'vault'), userHome: root, codexHome, port: 0, accountRequest: account,
+    restartServer: async (directory) => {
+      assert.equal(directory, codexHome);
+      assert.equal(JSON.parse(await readFile(join(directory, 'auth.json'), 'utf8')).tokens.access_token, 'target');
+      restarted++;
+      if (failRestart) throw new Error('重启失败');
+    } });
+  context.after(() => server.close());
+  const session = await new CredentialClient({ codexHome: join(root, 'client-codex') }).connect({ port: Number(new URL(server.url).port) });
+  await writeAtomic(session.codexAuthPath, auth('target'));
+  const { credential } = await session.saveCurrent();
+  const findProcesses = async () => [{ pid: 7654, command: 'codex' }];
+  for (const decision of [false, true, 'restart'] as const) {
+    await writeAtomic(session.codexAuthPath, auth('original'));
+    await switchCredential(session, credential, { findProcesses, ask: async () => decision, log: () => {} });
+    assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, decision ? 'target' : 'original');
+    assert.equal(restarted, decision === 'restart' ? 1 : 0);
+  }
+  failRestart = true;
+  await assert.rejects(switchCredential(session, credential, { findProcesses, ask: async () => 'restart', log: () => {} }), /重启失败/u);
+  assert.equal(restarted, 2);
+  assert.deepEqual(await session.current(), { status: 'saved', email });
+  const before = restarted;
+  await assert.rejects(switchCredential(session, { type: 'codex', email: 'missing@example.com' }, { findProcesses, ask: async () => 'restart', log: () => {} }));
+  assert.equal(restarted, before);
 });

@@ -58,6 +58,8 @@ TUI、`status`、`list` 和操作提示中的邮箱统一脱敏：账户名保�
 
 指定邮箱只跳过账号选择，切换仍沿用当前登录保存提醒、版本冲突处理和运行中 Codex 确认。指定账号不存在时以非零状态退出；非交互环境中，只有无需选择或确认的指定账号切换可以执行，需要确认时以非零状态退出，本机登录文件保持不变。
 
+检测到 Codex 进程仍在运行时，按顺序提供「取消，先退出 Codex」「仍然切换」「仍然切换并重启 codex server」，默认取消。最后一项在切换成功后，由服务端使用当前登录文件所属的 `CODEX_HOME` 执行官方命令 `codex app-server daemon restart`，重启 Codex 托管后台服务；独立启动的会话仍需手动重启。需要支持该命令的官方 Codex CLI。重启失败会明确提示账号已切换，并提醒手动重启，不回滚已完成的切换。「更新本机登录」保留原来的取消和继续两项。
+
 ```sh
 codexplus status
 codexplus list --port 47831
@@ -169,6 +171,7 @@ HTTP 协议版本为 4；连接前检查服务名称和版本，不兼容时不�
 | GET /v1/login/info | 服务端数据目录、用户主目录和当前登录文件路径 |
 | GET /v1/login | 当前登录账号及同步状态，不含凭证 |
 | GET /v1/login/processes | 服务端检测到的 Codex 进程 |
+| POST /v1/login/restart-server | 重启当前登录目录的 Codex 托管后台服务 |
 | POST /v1/login/refresh-times | 按 type、email 查询当前登录和凭证库刷新时间 |
 | POST /v1/login/save | 保存服务端当前登录，可带 base、restore |
 | POST /v1/login/switch | 按 type、email 在服务端切换当前登录 |

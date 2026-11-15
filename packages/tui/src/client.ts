@@ -33,8 +33,8 @@ export class Session {
     private readonly sessionToken?: string,
   ) {}
 
-  private async request(path: string, body?: unknown): Promise<unknown> {
-    return await requestService(this.url, path, body, this.sessionToken);
+  private async request(path: string, body?: unknown, timeoutMs?: number): Promise<unknown> {
+    return await requestService(this.url, path, body, this.sessionToken, timeoutMs);
   }
 
   async list(): Promise<Credential[]> {
@@ -151,6 +151,11 @@ export class Session {
     const result = await this.request('/v1/login/switch', parseCredential(credential));
     if (!isRecord(result) || result.ok !== true) throw new Error('服务端切换响应格式无效。');
     if (typeof result.warning === 'string') this.log(result.warning);
+  }
+
+  async restartCodexServer(): Promise<void> {
+    const result = await this.request('/v1/login/restart-server', {}, 360_000);
+    if (!isRecord(result) || result.ok !== true) throw new Error('服务端重启响应格式无效。');
   }
 
   async close(): Promise<void> { await this.stop(); }
