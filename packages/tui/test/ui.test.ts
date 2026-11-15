@@ -1,19 +1,75 @@
 import assert from 'node:assert/strict';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
 import { Separator } from '@inquirer/prompts';
-import { addChoices, displayWidth, fit, line, mainChoices, renderStatus, selectTheme, switchChoices } from '../src/ui.js';
+import { addChoices, deleteChoices, displayWidth, fit, line, mainChoices, maskEmail, maskHomePath, renderStatus, selectTheme, switchChoices } from '../src/ui.js';
 
 const alice = { type: 'codex' as const, email: 'alice@example.com' };
 const bob = { type: 'codex' as const, email: 'bob@example.com' };
 const plain = (text: string) => stripVTControlCharacters(text);
 
+test('邮箱脱敏保留账号前后各两位及服务商首字符，隐藏短账号和域名后缀', () => {
+  for (const [email, masked] of [
+    ['guest66@163.example', 'gu***66@1***'],
+    ['taylorigma@icloud.example', 'ta***ma@i***'],
+    ['taylorigma@outlook.example', 'ta***ma@o***'],
+    ['weston1029@gmail.example', 'we***29@g***'],
+    ['a@example.com', '***@e***'],
+    ['abcd@example.com', '***@e***'],
+    ['用户测试账号@example.com', '用户***账号@e***'],
+  ] as const) {
+    assert.equal(maskEmail(email), masked);
+  }
+});
+
+test('切换和删除列表只脱敏显示名称，保留完整账号作为操作值', () => {
+  const credentials = ['taylorigma@icloud.example', 'taylorigma@outlook.example']
+    .map((email) => ({ type: 'codex' as const, email }));
+  const menu = switchChoices(credentials, { status: 'saved', email: credentials[0]!.email });
+  assert.equal(menu.default, credentials[1]);
+  const queried: string[] = [];
+  const deleted = deleteChoices(credentials, (email) => { queried.push(email); return null; });
+  for (const choices of [menu.choices, deleted]) {
+    const [first, second] = choices;
+    assert.ok(first && second && !(first instanceof Separator) && !(second instanceof Separator));
+    assert.equal(first.name, 'ta***ma@i***');
+    assert.equal(second.name, 'ta***ma@o***');
+    assert.equal(first.value, credentials[0]);
+    assert.equal(second.value, credentials[1]);
+  }
+  assert.deepEqual(queried, credentials.map(({ email }) => email));
+});
+
+test('路径只隐藏所属用户目录的账户名', () => {
+  const users = resolve('synthetic-users');
+  const userHome = join(users, 'syntheticuser');
+  assert.equal(maskHomePath(join(userHome, '.codexplus'), userHome), join(users, 'sy***er', '.codexplus'));
+  assert.equal(maskHomePath(userHome, userHome), join(users, 'sy***er'));
+  const outside = join(users, 'syntheticuser-other', 'data');
+  assert.equal(maskHomePath(outside, userHome), outside);
+  assert.equal(maskHomePath('./data', userHome), './data');
+});
+
 test('状态栏区分已保存、未保存和未登录', () => {
-  assert.match(plain(renderStatus({ status: 'saved', email: 'alice@example.com' }, 2)), /当前账号 {2}● alice@example\.com\n已保存 {4}2 个/u);
-  assert.match(plain(renderStatus({ status: 'unsaved', email: 'carol@example.com' }, 0)), /carol@example\.com 未保存[\s\S]*暂无/u);
+  assert.match(plain(renderStatus({ status: 'saved', email: 'alice@example.com' }, 2)), /当前账号 {2}● al\*{3}ce@e\*{3}\n已保存 {4}2 个/u);
+  assert.match(plain(renderStatus({ status: 'unsaved', email: 'carol@example.com' }, 0)), /ca\*{3}ol@e\*{3} 未保存[\s\S]*暂无/u);
   assert.match(plain(renderStatus({ status: 'unsaved', email: null }, 1)), /无法识别/u);
   assert.match(plain(renderStatus({ status: 'none' }, 1)), /未登录/u);
-  assert.match(plain(renderStatus({ status: 'ahead', email: 'alice@example.com' }, 1)), /alice@example\.com 有更新未保存/u);
+  assert.match(plain(renderStatus({ status: 'ahead', email: 'alice@example.com' }, 1)), /al\*{3}ce@e\*{3} 有更新未保存/u);
+});
+
+test('各同步状态、添加来源和更新说明都使用脱敏邮箱', () => {
+  for (const status of ['saved', 'ahead', 'behind', 'diverged', 'deleted', 'unsaved'] as const) {
+    const current = { status, email: alice.email };
+    const text = plain([
+      renderStatus(current, 2),
+      ...mainChoices([alice, bob], current).choices.map((choice) => 'description' in choice ? choice.description : ''),
+      ...addChoices(current).map((choice) => 'description' in choice ? choice.description : ''),
+    ].join('\n'));
+    assert.ok(text.includes('al***ce@e***'));
+    assert.ok(!text.includes(alice.email));
+  }
 });
 
 test('主菜单在没有可切换账号或当前登录需要保存时默认添加', () => {

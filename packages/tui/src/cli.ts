@@ -6,7 +6,7 @@ import { CredentialClient } from './client.js';
 import { parseCommand, usage } from './options.js';
 import { menu, switchAccount } from './flows.js';
 import { confirmRestore, confirmUpload, isCancel, requireInteractive } from './prompts.js';
-import { cancelled, line, renderStatus, renderTitle, symbols } from './ui.js';
+import { cancelled, line, maskEmail, maskHomePath, renderStatus, renderTitle, symbols } from './ui.js';
 
 function readVersion(): string {
   try {
@@ -44,16 +44,17 @@ async function main(): Promise<void> {
       const credentials = await store.list();
       const current = await store.current();
       if (command.kind === 'status') {
-        console.log(store.server === 'local' ? `数据目录  ${store.home}` : `服务地址  ${store.url}`);
-        console.log(`登录文件  ${store.codexAuthPath}`);
-        console.log(renderStatus(current, credentials.length, store.codexAuthPath));
+        console.log(store.server === 'local' ? `数据目录  ${maskHomePath(store.home, store.userHome)}` : `服务地址  ${store.url}`);
+        const authPath = maskHomePath(store.codexAuthPath, store.userHome);
+        console.log(`登录文件  ${authPath}`);
+        console.log(renderStatus(current, credentials.length, authPath));
       } else if (credentials.length === 0) {
         console.log('暂无已保存的账号。');
       } else {
         for (const credential of credentials) {
           const active = 'email' in current && current.email === credential.email;
           const broken = store.snapshotDigest(credential.email) === null;
-          console.log(`${credential.email}${active ? '  ← 当前' : ''}${broken ? '  凭证文件缺失或损坏' : ''}`);
+          console.log(`${maskEmail(credential.email)}${active ? '  ← 当前' : ''}${broken ? '  凭证文件缺失或损坏' : ''}`);
         }
       }
     }
