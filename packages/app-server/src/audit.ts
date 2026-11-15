@@ -4,7 +4,7 @@ import { readOptional, writeAtomic, withLock } from '@weiguangchao/codexplus-sha
 
 export interface AuditEntry {
   time: string;
-  event: '下载' | '上传' | '删除' | '切换';
+  event: '下载' | '上传' | '删除' | '切换' | '重置';
   clientId: string;
   clientName: string;
   email?: string;

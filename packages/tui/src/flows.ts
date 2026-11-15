@@ -7,6 +7,7 @@ import type { Session } from './client.js';
 import { BACK, escapable, isCancel } from './prompts.js';
 import { pathInput } from './path-input.js';
 import { browserLoginPrompt } from './browser-prompt.js';
+import { resetCardFlow } from './reset-cards.js';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 import { confirmRunningCodex } from './switch.js';
 import type { RunningCodexDecision } from './switch.js';
@@ -440,6 +441,8 @@ export async function menu(store: Session): Promise<void> {
     try {
       if (action === 'delete') {
         await deleteFlow(store, credentials, current);
+      } else if (action === 'reset') {
+        await resetCardFlow(store, credentials);
       } else if (action === 'update') {
         if (current.status === 'behind') {
           await downloadCurrent(store, current.email);

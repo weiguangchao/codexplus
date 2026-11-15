@@ -1,6 +1,6 @@
-import { isRecord, parseCredential, requestService, parsePort, protocolVersion, ServiceError } from '@weiguangchao/codexplus-shared';
-import type { Credential, CurrentLogin, UploadResult } from '@weiguangchao/codexplus-shared';
-import { randomBytes } from 'node:crypto';
+import { isRecord, parseCredential, parseResetCard, parseResetCardOutcome, requestService, parsePort, protocolVersion, ServiceError } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin, ResetCard, ResetCardOutcome, UploadResult } from '@weiguangchao/codexplus-shared';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -21,6 +21,7 @@ export class Session {
   confirmUpload?: (details: Record<string, unknown>) => Promise<boolean>;
   confirmRestore?: (email: string | null) => Promise<boolean>;
   private digests = new Map<string, string | null>();
+  private resetRequests = new Map<string, string>();
 
   constructor(
     readonly url: string,
@@ -145,6 +146,23 @@ export class Session {
     if (base === undefined) throw new Error('账号列表已变化，请刷新后重新选择。');
     await this.request('/v1/credentials/delete', { ...credential, base });
     this.digests.delete(credential.email);
+  }
+
+  async resetCards(credential: Credential): Promise<ResetCard[]> {
+    const result = await this.request('/v1/reset-cards', parseCredential(credential));
+    if (!isRecord(result) || !Array.isArray(result.cards)) throw new Error('服务端重置卡列表格式无效。');
+    return result.cards.map(parseResetCard);
+  }
+
+  async useResetCard(credential: Credential, cardId: string): Promise<ResetCardOutcome> {
+    const selected = parseCredential(credential);
+    const key = JSON.stringify([selected.email, cardId]);
+    const requestId = this.resetRequests.get(key) ?? randomUUID();
+    this.resetRequests.set(key, requestId);
+    const result = await this.request('/v1/reset-cards/use', { ...selected, cardId, requestId });
+    const outcome = parseResetCardOutcome(isRecord(result) ? result.outcome : undefined);
+    this.resetRequests.delete(key);
+    return outcome;
   }
 
   async switch(credential: Credential): Promise<void> {

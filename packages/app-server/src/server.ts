@@ -13,6 +13,7 @@ import { BrowserSessions } from './browser-sessions.js';
 import { browserLogin } from './browser-login.js';
 import { findCodexProcesses } from './processes.js';
 import { restartCodexServer } from './restart-codex.js';
+import { listResetCards, useResetCard } from './reset-cards.js';
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -77,6 +78,26 @@ export async function startServer({
     if (request.method === 'GET' && path === '/v1/login/info') return await current.info();
     if (request.method === 'GET' && path === '/v1/login') return { current: await current.current() };
     if (request.method === 'GET' && path === '/v1/login/processes') return { processes: await findProcesses() };
+    if (request.method === 'POST' && ['/v1/reset-cards', '/v1/reset-cards/use'].includes(path)) {
+      try {
+        const credential = parseCredential(body);
+        if (path === '/v1/reset-cards') {
+          return { cards: await listResetCards(parseAuth(await store.get(credential)).tokens, accountRequest) };
+        }
+        if (typeof body.cardId !== 'string' || !body.cardId.trim() ||
+          typeof body.requestId !== 'string' || !body.requestId.trim()) {
+          throw new HttpError(400, '使用重置卡必须提供 cardId 和 requestId。');
+        }
+        const { tokens } = parseAuth(await store.get(credential));
+        const outcome = await useResetCard(tokens, body.cardId, body.requestId, accountRequest);
+        if (outcome === 'reset') await recordCommitted(home, '重置', client, { email: credential.email });
+        return { outcome };
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        throw error;
+      }
+    }
     if (request.method === 'POST' && ['/v1/login/save', '/v1/login/switch', '/v1/login/refresh-times', '/v1/login/restart-server',
       '/v1/credentials/import', '/v1/credentials/validate', '/v1/login/browser/start', '/v1/login/browser/status',
       '/v1/login/browser/save', '/v1/login/browser/cancel'].includes(path)) {
