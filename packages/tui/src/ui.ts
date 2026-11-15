@@ -6,7 +6,7 @@ import { styleText } from 'node:util';
 import { newerRefresh } from '@weiguangchao/codexplus-shared';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 
-export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'reset' | 'exit';
 export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
@@ -147,6 +147,12 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin, au
       value: 'delete' as const,
       name: '删除账号',
       description: '从服务端删除一个已保存的账号，本机登录不受影响',
+      disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
+    },
+    {
+      value: 'reset' as const,
+      name: '使用 Codex 重置卡',
+      description: '先选择账号，再选择该账号的可用重置卡，确认后重置用量',
       disabled: credentials.length === 0 ? styleText('dim', '(暂无账号)') : false,
     },
     divider(),

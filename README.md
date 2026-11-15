@@ -113,7 +113,11 @@ codexplus status --port 47831
 
 删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。
 
-`codexplus-server log [--limit 条数] [--home 目录]` 按时间顺序显示最近操作，默认 50 条。记录成功的下载、实际写入的上传、删除和切换，最多保存 1000 条，不含 token 或凭证内容；每条包含时间、事件、操作者「本机」和账号邮箱。上传、删除和切换在完成后记录，记录写入失败不影响结果，只在服务端输出一行警告；下载在返回凭证前记录，记录失败时不返回凭证。
+**使用 Codex 重置卡**位于「删除账号」之后。先从已保存的账号中选择（包括当前账号），再查询该账号的可用重置卡；每张卡片名称后直接显示过期时间，按过期时间由近到远排列，未提供过期时间的卡片排在最后并标注「过期时间：未提供」。选中卡片时下方还显示说明、获得时间和到期时间；已使用、处理中和已到期的卡片不列出。无可用卡片时可以改选账号。选卡后再次确认，默认取消；Esc 从确认返回卡片列表，从卡片列表返回账号列表，从账号列表回到主菜单。确认后仅使用所选卡片，结果区分成功、此前已成功、当前无需重置和无可用次数，不自动重试或改用另一张卡；网络异常时提示先查看用量和卡片状态。同一客户端会话内，对结果未知的同一账号、同一卡片再次发起请求时沿用原请求 ID。此功能不切换账号、不改写当前登录文件。
+
+重置卡查询和使用由服务端读取所选账号保存的凭证完成，TUI 仅接收卡片信息及使用结果。接口与字段对照 [Codex 官方 backend-client 源码](https://github.com/openai/codex/blob/ee344ca9458351a6ea102795fa73110ad3ede5dc/codex-rs/backend-client/src/client/rate_limit_resets.rs)：查询 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`，使用 `POST .../consume`，提交指定的 `credit_id` 和幂等字段 `redeem_request_id`。与账号查询相同，仅发送已有 access token 和可选的 `ChatGPT-Account-Id`，不自行刷新 token；接口变化或凭证过期会显示错误。
+
+`codexplus-server log [--limit 条数] [--home 目录]` 按时间顺序显示最近操作，默认 50 条。记录成功的下载、实际写入的上传、删除、切换和重置，最多保存 1000 条，不含 token 或凭证内容；每条包含时间、事件、操作者「本机」和账号邮箱。上传、删除、切换和重置在完成后记录，记录写入失败不影响结果，只在服务端输出一行警告；下载在返回凭证前记录，记录失败时不返回凭证。重置仅在上游返回本次成功重置时记录，重复请求返回「此前已成功」不重复记录。
 
 `log` 要求数据目录已存在且是目录，否则报错并提示检查 `--home`，不会创建目录；服务端未运行时也可读取日志，不接受 `--port`。启动服务端时会自动创建所需目录。
 
@@ -193,6 +197,8 @@ HTTP 协议版本为 4；连接前检查服务名称和版本，不兼容时不�
 | POST /v1/credentials | 上传 `{ auth, base }` |
 | POST /v1/credentials/download | 按 type、email 下载 |
 | POST /v1/credentials/delete | 按 type、email、base（摘要或 null，必填）条件删除 |
+| POST /v1/reset-cards | 按 type、email 查询所选账号可用的重置卡，不含凭证 |
+| POST /v1/reset-cards/use | 按 type、email、cardId、requestId 使用指定卡片，返回 outcome |
 
 上传与下载原始凭证的接口保留供直接 API 调用，TUI 不使用这两个接口。交互流程在 packages/tui/src/flows.ts，覆盖确认的提示在 packages/tui/src/prompts.ts。
 
