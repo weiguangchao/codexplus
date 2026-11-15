@@ -6,7 +6,7 @@
 
 通过 C/S 架构集中保存 Codex / ChatGPT 凭证，在用户自己的电脑上用 TUI 添加和切换账号。仓库是 npm workspaces 组成的 monorepo，提供两个命令：
 
-- **服务端**（`codexplus-server`，包 `packages/app-server`）保存账户凭证，读写当前 Codex 登录文件，查询账号邮箱，执行文件导入、浏览器登录和进程检测，通过仅监听 `127.0.0.1` 的 HTTP 接口提供操作。
+- **服务端**（`codexplus-server`，包 `packages/app-server`）保存账户凭证，读写当前 Codex 登录文件，查询账号邮箱，执行文件导入、浏览器登录和进程检测，通过仅监听 `127.0.0.1` 的 JSON-RPC 2.0 接口提供操作。
 - **客户端**（`codexplus`，包 `packages/tui`）是本机 TUI，负责视图、菜单、输入和确认，通过 API 请求服务端保存或切换账号。客户端不读写凭证文件，也不接收账号 token；当前登录路径由服务端的 `CODEX_HOME` 决定，默认 `~/.codex/auth.json`。服务端只执行登录和凭证管理，不运行 Codex 任务。
 
 ## 安装
@@ -177,42 +177,54 @@ cli_auth_credentials_store = "file"
 
 Codex 的存储方式说明见 [OpenAI 官方认证文档](https://developers.openai.com/codex/auth/)。本工具不会修改 Codex 的其他配置。
 
-HTTP 协议版本为 4；连接前检查服务名称和版本，不兼容时不进行凭证操作。TUI 仅提交路径、账号、本次登录标识及确认参数，服务端响应元数据和操作结果。保存响应为 `{ credential, changed }`，相同内容不记上传操作记录，保存当前登录时仍记录服务端同步基线。冲突返回 409，确认后以最新摘要重试；重新保存已删除的账号须确认并提交 `restore: true`。切换、保存当前登录和更新当前登录后记录基线，从其他文件或浏览器添加不记录。
+服务端采用 JSON-RPC 2.0 over HTTP，应用协议版本为 5；连接前检查服务名称和版本，不兼容时不进行凭证操作。TUI 仅提交路径、账号、本次登录标识及确认参数，服务端响应元数据和操作结果。保存响应为 `{ credential, changed }`，相同内容不记上传操作记录，保存当前登录时仍记录服务端同步基线。冲突通过 `error.data.status: 409` 返回，确认后以最新摘要重试；重新保存已删除的账号须确认并提交 `restore: true`。切换、保存当前登录和更新当前登录后记录基线，从其他文件或浏览器添加不记录。
 
-服务端仅提供以下本机接口，不提供配对或远程授权，并拒绝浏览器跨站请求和非本机 Host；客户端不跟随 HTTP 重定向。独立本机服务端直接接受本机客户端请求，自带服务端除健康检查外使用内存会话令牌：
+所有方法通过 `POST /rpc` 调用，`Content-Type` 为 `application/json`，`params` 使用命名参数对象（无需参数时可省略），旧 `/v1/*` 路由已移除。服务端提供以下本机方法，不提供配对或远程授权，并拒绝浏览器跨站请求和非本机 Host；客户端不跟随 HTTP 重定向。独立本机服务端直接接受本机客户端请求，自带服务端除 `health` 外使用内存会话令牌（`Authorization: Bearer <token>`），批量请求中包含其他方法时同样需要鉴权：
 
-| 方法与路径 | 内容 |
+| JSON-RPC 方法 | 内容 |
 | --- | --- |
-| GET /v1/health | 服务名称、协议版本 4 |
-| GET /v1/login/info | 服务端数据目录、用户主目录和当前登录文件路径 |
-| GET /v1/login | 当前登录账号及同步状态，不含凭证 |
-| GET /v1/login/processes | 服务端检测到的 Codex 进程 |
-| POST /v1/login/restart-server | 重启当前登录目录的 Codex 托管后台服务 |
-| POST /v1/login/refresh-times | 按 type、email 查询当前登录和凭证库刷新时间 |
-| POST /v1/login/save | 保存服务端当前登录，可带 base、restore |
-| POST /v1/login/switch | 按 type、email 在服务端切换当前登录 |
-| POST /v1/credentials/validate | 服务端校验 path 指向的文件 |
-| POST /v1/credentials/import | 服务端读取 path 并保存，可带 base、restore |
-| POST /v1/login/browser/start | 启动服务端浏览器登录，返回本次登录标识 |
-| POST /v1/login/browser/status | 按 id 查询链接、进度或错误，不含凭证 |
-| POST /v1/login/browser/save | 按 id 保存服务端持有的凭证，可带 base、restore |
-| POST /v1/login/browser/cancel | 按 id 取消并清理本次登录 |
-| GET /v1/credentials | 账号、摘要、lastRefresh |
-| GET /v1/login/account-info | 当前登录账号的套餐、到期时间、五小时及每周剩余额度，不含凭证 |
-| POST /v1/credentials | 上传 `{ auth, base }` |
-| POST /v1/credentials/download | 按 type、email 下载 |
-| POST /v1/credentials/delete | 按 type、email、base（摘要或 null，必填）条件删除 |
-| POST /v1/reset-cards | 按 type、email 查询所选账号可用的重置卡，不含凭证 |
-| POST /v1/reset-cards/use | 按 type、email、cardId、requestId 使用指定卡片，返回 outcome |
+| `health` | 服务名称、应用协议版本 5 |
+| `login.info` | 服务端数据目录、用户主目录和当前登录文件路径 |
+| `login.current` | 当前登录账号及同步状态，不含凭证 |
+| `login.processes` | 服务端检测到的 Codex 进程 |
+| `login.restartServer` | 重启当前登录目录的 Codex 托管后台服务 |
+| `login.refreshTimes` | 按 type、email 查询当前登录和凭证库刷新时间 |
+| `login.save` | 保存服务端当前登录，可带 base、restore |
+| `login.switch` | 按 type、email 在服务端切换当前登录 |
+| `credentials.validate` | 服务端校验 path 指向的文件 |
+| `credentials.import` | 服务端读取 path 并保存，可带 base、restore |
+| `login.browser.start` | 启动服务端浏览器登录，返回本次登录标识 |
+| `login.browser.status` | 按 id 查询链接、进度或错误，不含凭证 |
+| `login.browser.save` | 按 id 保存服务端持有的凭证，可带 base、restore |
+| `login.browser.cancel` | 按 id 取消并清理本次登录 |
+| `credentials.list` | 账号、摘要、lastRefresh |
+| `login.accountInfo` | 当前登录账号的套餐、到期时间、五小时及每周剩余额度，不含凭证 |
+| `credentials.upload` | 上传 `{ auth, base }` |
+| `credentials.download` | 按 type、email 下载 |
+| `credentials.delete` | 按 type、email、base（摘要或 null，必填）条件删除 |
+| `resetCards.list` | 按 type、email 查询所选账号可用的重置卡，不含凭证 |
+| `resetCards.use` | 按 type、email、cardId、requestId 使用指定卡片，返回 outcome |
 
-上传与下载原始凭证的接口保留供直接 API 调用，TUI 不使用这两个接口。交互流程在 packages/tui/src/flows.ts，覆盖确认的提示在 packages/tui/src/prompts.ts。
+调用示例：
+
+```sh
+curl http://127.0.0.1:47831/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"health"}'
+```
+
+成功响应为 `{"jsonrpc":"2.0","id":1,"result":{"service":"codexplus","version":5}}`。单次调用原样回显 `id`；省略 `id` 表示通知，执行后不返回 JSON-RPC 响应，HTTP 状态为 204。批量请求使用数组，服务端按数组顺序执行，仅返回需要响应的条目；全部为通知时返回 204，批量请求不保证事务性。
+
+JSON-RPC 响应使用 HTTP 200，错误位于 `error`：`-32700` 表示 JSON 解析失败，`-32600` 表示请求格式无效，`-32601` 表示方法不存在，`-32602` 表示参数无效，`-32603` 表示未预期的内部错误。其他业务错误使用 `-32000`，业务状态和冲突详情放在 `error.data`（例如 `status`、`code`、`digest`）。本机地址、跨站、鉴权、请求大小和媒体类型等 HTTP 层拒绝仍使用对应的 HTTP 4xx 状态。JSON-RPC 的 `id` 仅关联请求和响应，使用重置卡时仍须提供独立的业务 `requestId`。
+
+上传与下载原始凭证的方法保留供直接 API 调用，TUI 不使用这两个接口。交互流程在 packages/tui/src/flows.ts，覆盖确认的提示在 packages/tui/src/prompts.ts。
 
 ## 仓库结构
 
 | 包 | 内容 | 依赖 |
 | --- | --- | --- |
-| `packages/shared`（`@weiguangchao/codexplus-shared`） | 凭证解析与摘要、原子写入、目录锁、HTTP 协议、`--home` 和命令参数解析 | 无 |
-| `packages/app-server`（`@weiguangchao/codexplus-server`） | 凭证库、当前登录文件、同步状态、浏览器登录、进程检测、CodexBar、操作记录和本机 HTTP 服务，命令 `codexplus-server` | shared |
+| `packages/shared`（`@weiguangchao/codexplus-shared`） | 凭证解析与摘要、原子写入、目录锁、JSON-RPC 协议、`--home` 和命令参数解析 | 无 |
+| `packages/app-server`（`@weiguangchao/codexplus-server`） | 凭证库、当前登录文件、同步状态、浏览器登录、进程检测、CodexBar、操作记录和本机 JSON-RPC 服务，命令 `codexplus-server` | shared |
 | `packages/tui`（`@weiguangchao/codexplus`） | 视图、菜单、输入、确认与 API 调用，命令 `codexplus` | shared、app-server（本机模式内嵌服务端） |
 
 根包为私有工作区入口，三个工作区包公开发布到 npm，版本保持一致。各包测试放在自己的 `test/` 目录；需要同时启动客户端和服务端的测试放在 tui。开发、类型检查和测试通过 `source` 导出条件直接使用其他包的源码，无需先构建；构建用 `tsc -b` 按依赖顺序输出各包的 `dist/`。

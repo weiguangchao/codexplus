@@ -34,12 +34,12 @@ export class Session {
     private readonly sessionToken?: string,
   ) {}
 
-  private async request(path: string, body?: unknown, timeoutMs?: number): Promise<unknown> {
-    return await requestService(this.url, path, body, this.sessionToken, timeoutMs);
+  private async request(method: string, params?: object, timeoutMs?: number): Promise<unknown> {
+    return await requestService(this.url, method, params, this.sessionToken, timeoutMs);
   }
 
   async list(): Promise<Credential[]> {
-    const result = await this.request('/v1/credentials');
+    const result = await this.request('credentials.list');
     if (!isRecord(result) || !Array.isArray(result.credentials)) throw new Error('服务端凭证列表格式无效。');
     const digests = new Map<string, string | null>();
     const credentials = result.credentials.map((entry: unknown) => {
@@ -52,7 +52,7 @@ export class Session {
   }
 
   async current(): Promise<CurrentLogin> {
-    const result = await this.request('/v1/login');
+    const result = await this.request('login.current');
     if (!isRecord(result) || !isRecord(result.current)) throw new Error('服务端登录状态格式无效。');
     const current = result.current;
     if (current.status === 'none') return { status: 'none' };
@@ -67,17 +67,17 @@ export class Session {
   snapshotDigest(email: string): string | null { return this.digests.get(email) ?? null; }
 
   async accountInfo(): Promise<AccountInfo> {
-    return parseAccountInfo(await this.request('/v1/login/account-info', undefined, 35_000));
+    return parseAccountInfo(await this.request('login.accountInfo', undefined, 35_000));
   }
 
   async refreshTimes(email: string): Promise<{ local: unknown; server: unknown }> {
-    const result = await this.request('/v1/login/refresh-times', { type: 'codex', email });
+    const result = await this.request('login.refreshTimes', { type: 'codex', email });
     if (!isRecord(result)) throw new Error('服务端刷新时间格式无效。');
     return { local: result.local, server: result.server };
   }
 
   async processes(): Promise<{ pid: number; command: string }[]> {
-    const result = await this.request('/v1/login/processes');
+    const result = await this.request('login.processes');
     if (!isRecord(result) || !Array.isArray(result.processes) || !result.processes.every((entry: unknown) =>
       isRecord(entry) && Number.isSafeInteger(entry.pid) && Number(entry.pid) > 0 && typeof entry.command === 'string')) {
       throw new Error('服务端 Codex 进程列表格式无效。');
@@ -85,24 +85,24 @@ export class Session {
     return result.processes;
   }
 
-  async validateSource(path: string): Promise<void> { await this.request('/v1/credentials/validate', { path }); }
+  async validateSource(path: string): Promise<void> { await this.request('credentials.validate', { path }); }
 
   async add(path: string, base?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
-    return await this.save('/v1/credentials/import', { path, ...(base === undefined ? {} : { base }) }, upload);
+    return await this.save('credentials.import', { path, ...(base === undefined ? {} : { base }) }, upload);
   }
 
   async saveCurrent(base?: string | null, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
-    return await this.save('/v1/login/save', base === undefined ? {} : { base }, upload);
+    return await this.save('login.save', base === undefined ? {} : { base }, upload);
   }
 
   async saveBrowserLogin(id: string, upload: (task: () => Promise<unknown>) => Promise<unknown> = (task) => task()): Promise<UploadResult> {
-    return await this.save('/v1/login/browser/save', { id }, upload);
+    return await this.save('login.browser.save', { id }, upload);
   }
 
-  private async save(path: string, body: Record<string, unknown>, upload: (task: () => Promise<unknown>) => Promise<unknown>): Promise<UploadResult> {
+  private async save(method: string, body: Record<string, unknown>, upload: (task: () => Promise<unknown>) => Promise<unknown>): Promise<UploadResult> {
     for (;;) {
       try {
-        const result = await upload(() => this.request(path, body));
+        const result = await upload(() => this.request(method, body));
         if (!isRecord(result) || typeof result.changed !== 'boolean') throw new Error('服务端保存响应格式无效。');
         return { credential: parseCredential(result.credential), changed: result.changed };
       } catch (error) {
@@ -122,13 +122,13 @@ export class Session {
 
   async browserLogin({ signal, onUrl, onBrowserError }: { signal: AbortSignal; onUrl: (url: string) => void; onBrowserError: () => void }): Promise<string> {
     signal.throwIfAborted();
-    const result = await this.request('/v1/login/browser/start', {});
+    const result = await this.request('login.browser.start', {});
     if (!isRecord(result) || typeof result.id !== 'string') throw new Error('服务端浏览器登录响应无效。');
     const id = result.id;
     try {
       for (;;) {
         signal.throwIfAborted();
-        const status = await this.request('/v1/login/browser/status', { id });
+        const status = await this.request('login.browser.status', { id });
         if (!isRecord(status)) throw new Error('服务端浏览器登录状态无效。');
         if (typeof status.url === 'string' && status.url) onUrl(status.url);
         if (status.manual === true) onBrowserError();
@@ -143,17 +143,17 @@ export class Session {
     }
   }
 
-  async cancelBrowserLogin(id: string): Promise<void> { await this.request('/v1/login/browser/cancel', { id }); }
+  async cancelBrowserLogin(id: string): Promise<void> { await this.request('login.browser.cancel', { id }); }
 
   async delete(credential: Credential): Promise<void> {
     const base = this.digests.get(credential.email);
     if (base === undefined) throw new Error('账号列表已变化，请刷新后重新选择。');
-    await this.request('/v1/credentials/delete', { ...credential, base });
+    await this.request('credentials.delete', { ...credential, base });
     this.digests.delete(credential.email);
   }
 
   async resetCards(credential: Credential): Promise<ResetCard[]> {
-    const result = await this.request('/v1/reset-cards', parseCredential(credential));
+    const result = await this.request('resetCards.list', parseCredential(credential));
     if (!isRecord(result) || !Array.isArray(result.cards)) throw new Error('服务端重置卡列表格式无效。');
     return result.cards.map(parseResetCard);
   }
@@ -163,20 +163,20 @@ export class Session {
     const key = JSON.stringify([selected.email, cardId]);
     const requestId = this.resetRequests.get(key) ?? randomUUID();
     this.resetRequests.set(key, requestId);
-    const result = await this.request('/v1/reset-cards/use', { ...selected, cardId, requestId });
+    const result = await this.request('resetCards.use', { ...selected, cardId, requestId });
     const outcome = parseResetCardOutcome(isRecord(result) ? result.outcome : undefined);
     this.resetRequests.delete(key);
     return outcome;
   }
 
   async switch(credential: Credential): Promise<void> {
-    const result = await this.request('/v1/login/switch', parseCredential(credential));
+    const result = await this.request('login.switch', parseCredential(credential));
     if (!isRecord(result) || result.ok !== true) throw new Error('服务端切换响应格式无效。');
     if (typeof result.warning === 'string') this.log(result.warning);
   }
 
   async restartCodexServer(): Promise<void> {
-    const result = await this.request('/v1/login/restart-server', {}, 360_000);
+    const result = await this.request('login.restartServer', {}, 360_000);
     if (!isRecord(result) || result.ok !== true) throw new Error('服务端重启响应格式无效。');
   }
 
@@ -204,10 +204,10 @@ export class CredentialClient {
       ...(this.codexHome === undefined ? {} : { codexHome: this.codexHome }), port: 0, sessionToken });
     const url = embedded?.url ?? `http://127.0.0.1:${port}`;
     try {
-      const health = await requestService(url, '/v1/health');
+      const health = await requestService(url, 'health');
       if (!isRecord(health) || health.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
       if (health.version !== protocolVersion) throw new Error('版本不兼容，请把两端升级到同一版本。');
-      const info = await requestService(url, '/v1/login/info', undefined, sessionToken);
+      const info = await requestService(url, 'login.info', undefined, sessionToken);
       if (!isRecord(info) || typeof info.home !== 'string' || typeof info.userHome !== 'string' || typeof info.authPath !== 'string') {
         throw new Error('服务端登录文件信息无效。');
       }

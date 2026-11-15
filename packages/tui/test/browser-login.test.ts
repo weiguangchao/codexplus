@@ -38,7 +38,7 @@ test('浏览器凭证保留在服务端，TUI 使用登录标识保存、确认�
   const id = await session.browserLogin({ signal: new AbortController().signal, onUrl: (url) => urls.push(url), onBrowserError: () => { manual = true; } });
   assert.deepEqual(urls, ['https://auth.openai.com/fixture']);
   assert.ok(manual);
-  await assert.rejects(requestService(server.url, '/v1/login/browser/start', {}), /已有浏览器登录/u);
+  await assert.rejects(requestService(server.url, 'login.browser.start', {}), /已有浏览器登录/u);
   let confirmations = 0;
   session.confirmUpload = async () => { confirmations++; return false; };
   await assert.rejects(session.saveBrowserLogin(id), /已取消/u);
@@ -72,7 +72,7 @@ test('TUI 取消浏览器等待时通知服务端清理，可立即重新登录�
   const controller = new AbortController();
   await assert.rejects(session.browserLogin({ signal: controller.signal, onUrl: () => controller.abort(new Error('cancelled')), onBrowserError: () => {} }), /aborted|cancelled/u);
   assert.equal(cancelled, 1);
-  const started = await requestService(server.url, '/v1/login/browser/start', {}) as { id: string };
+  const started = await requestService(server.url, 'login.browser.start', {}) as { id: string };
   assert.ok(started.id);
   await server.close();
   closed = true;
