@@ -14,6 +14,7 @@
   },
   "scripts": {
     "dev": "tsx --conditions=source packages/tui/src/cli.ts --home .codexplus",
+    "dev:local": "tsx --conditions=source packages/tui/src/cli.ts",
     "dev:server": "tsx --conditions=source packages/app-server/src/cli.ts --home .codexplus",
     "build": "tsc -b tsconfig.build.json",
     "release:prepare": "tsx --conditions=source scripts/prepare-release.ts",

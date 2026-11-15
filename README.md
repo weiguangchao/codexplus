@@ -32,6 +32,14 @@ npm install --global ./packages/tui
 
 开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（服务端），两者直接运行源码，都显式传入 `--home .codexplus`，将数据放在项目根目录已忽略的 `.codexplus/` 中。
 
+需要使用日常账号数据运行本地开发版时，在仓库根目录执行：
+
+```sh
+npm run dev:local
+```
+
+该命令直接运行本地源码，无需构建或全局安装，使用默认数据目录 `~/.codexplus`，与全局安装版共享账号和配置。修改代码后重新运行即可生效。
+
 ## 命令
 
 ```sh
