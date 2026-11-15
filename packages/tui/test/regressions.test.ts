@@ -83,7 +83,7 @@ test('CP-008 与 CP-014 提示使用实际登录路径，帮助提前说明登�
   assert.match(renderStatus({ status: 'none' }, 0, path), /未找到登录文件：[\s\S]*\/custom codex\/auth.json/u);
   const source = addChoices({ status: 'unsaved', email }, path)[0];
   assert.ok(source && 'description' in source);
-  assert.equal(source.description, `${path} · ${email}`);
+  assert.equal(source.description, `${path} · pe***on@e***`);
   const choices = mainChoices([{ type: 'codex', email }], { status: 'behind', email }, path).choices;
   assert.ok(choices.some((choice) => 'description' in choice && choice.description?.includes(path)));
   assert.match(usage, /仅支持 ChatGPT 登录凭证.*API key/u);

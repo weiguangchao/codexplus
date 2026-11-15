@@ -1,6 +1,7 @@
 import figures, { mainSymbols } from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import stringWidth from 'fast-string-width';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
 import { newerRefresh } from '@weiguangchao/codexplus-shared';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
@@ -54,25 +55,42 @@ export function needsBackup(current: CurrentLogin): current is Extract<CurrentLo
   return current.status === 'ahead' || current.status === 'diverged' || current.status === 'unsaved' || current.status === 'deleted';
 }
 
+function maskName(name: string): string {
+  const characters = Array.from(name);
+  return characters.length > 4 ? `${characters.slice(0, 2).join('')}***${characters.slice(-2).join('')}` : '***';
+}
+
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  return at < 0 ? maskName(email) : `${maskName(email.slice(0, at))}@${Array.from(email.slice(at + 1))[0] ?? ''}***`;
+}
+
+export function maskHomePath(path: string, userHome: string): string {
+  if (!isAbsolute(path)) return path;
+  const inside = relative(userHome, path);
+  if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) return path;
+  return join(dirname(userHome), maskName(basename(userHome)), inside);
+}
+
 export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth.json'): string {
   const dot = (color: 'green' | 'yellow') => styleText(color, dots.filled);
   if (current.status === 'saved') {
-    return `${dot('green')} ${styleText('bold', current.email)}`;
+    return `${dot('green')} ${styleText('bold', maskEmail(current.email))}`;
   }
   if (current.status === 'behind' || current.status === 'diverged') {
     const note = current.status === 'behind' ? '服务端有更新版本' : '与服务端版本不一致';
-    return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', note)}`;
+    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', note)}`;
   }
   if (current.status === 'ahead') {
-    return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '有更新未保存')}`;
+    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '有更新未保存')}`;
   }
   if (current.status === 'deleted') {
-    return `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('dim', '已从凭证库删除，本机登录保留')}`;
+    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('dim', '已从凭证库删除，本机登录保留')}`;
   }
   if (current.status === 'unsaved') {
     return current.email === null
       ? `${dot('yellow')} ${styleText('yellow', '无法识别')} ${styleText('dim', '与已保存的账号都不一致')}`
-      : `${dot('yellow')} ${styleText('bold', current.email)} ${styleText('yellow', '未保存')}`;
+      : `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '未保存')}`;
   }
   if (current.status === 'invalid') {
     return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
@@ -116,7 +134,7 @@ export function mainChoices(credentials: Credential[], current: CurrentLogin, au
               : '通过浏览器登录或导入 auth.json，同一邮箱已保存时会先确认再覆盖';
   const choices = [
     ...(current.status === 'behind'
-      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${current.email} 新版本，写入 ${authPath}` }]
+      ? [{ value: 'update' as const, name: '更新本机登录', description: `下载服务端保存的 ${maskEmail(current.email)} 新版本，写入 ${authPath}` }]
       : []),
     {
       value: 'switch' as const,
@@ -156,11 +174,11 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin) 
       credential.email === active
         ? {
             value: credential as Credential | null,
-            name: credential.email,
+            name: maskEmail(credential.email),
             description: '这是正在使用的账号',
             disabled: styleText('green', `${dots.filled} 当前`),
           }
-        : { value: credential as Credential | null, name: credential.email },
+        : { value: credential as Credential | null, name: maskEmail(credential.email) },
     ),
     divider(),
     { value: null, name: '返回', description: '回到主菜单' },
@@ -173,7 +191,7 @@ export function deleteChoices(credentials: Credential[], digest: (email: string)
   return [
     ...credentials.map((credential) => ({
       value: credential as Credential | null,
-      name: credential.email,
+      name: maskEmail(credential.email),
       ...(digest(credential.email) === null ? { description: '服务端保存的凭证文件缺失或损坏' } : {}),
     })),
     { value: null, name: '返回', description: '回到主菜单' },
@@ -187,10 +205,10 @@ export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json
       : current.status === 'invalid'
         ? '登录文件无效或无法读取，请先在 Codex 中重新登录'
         : current.status === 'saved'
-          ? `${current.email} 已保存，与当前登录一致，无需更新`
+          ? `${maskEmail(current.email)} 已保存，与当前登录一致，无需更新`
           : current.status === 'ahead'
-            ? `${current.email} 有更新，将用当前登录更新已保存的凭证`
-            : `${authPath}${current.email === null ? '' : ` · ${current.email}`}`;
+            ? `${maskEmail(current.email)} 有更新，将用当前登录更新已保存的凭证`
+            : `${authPath}${current.email === null ? '' : ` · ${maskEmail(current.email)}`}`;
   return [
     {
       value: 'codex' as AddSource,

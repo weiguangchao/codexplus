@@ -15,6 +15,8 @@ import {
   deleteChoices,
   fitPath,
   line,
+  maskEmail,
+  maskHomePath,
   report,
   mainChoices,
   pathLabel,
@@ -71,7 +73,7 @@ async function saveFrom(store: Session, credentials: Credential[], path: string,
   const upload = (task: () => Promise<unknown>) => withSpinner('正在向 ChatGPT 查询账号邮箱…', task);
   const { credential, changed } = path === store.codexAuthPath ? await store.saveCurrent(base, upload) : await store.add(path, base, upload);
   const existed = credentials.some((entry) => entry.email === credential.email);
-  report(symbols.success, `${changed ? existed ? '已更新' : '已保存' : '已是最新，无需更新'} ${styleText('bold', credential.email)}`, fitPath(tildify(store, path), (process.stdout.columns || 80) - 2));
+  report(symbols.success, `${changed ? existed ? '已更新' : '已保存' : '已是最新，无需更新'} ${styleText('bold', maskEmail(credential.email))}`, fitPath(tildify(store, path), (process.stdout.columns || 80) - 2));
   return credential;
 }
 
@@ -109,7 +111,7 @@ async function browserAddFlow(store: Session): Promise<boolean> {
     for (;;) {
       try {
         const { credential, changed } = await store.saveBrowserLogin(result.id, (task) => withSpinner('正在向 ChatGPT 查询账号邮箱并保存…', task));
-        report(symbols.success, `${changed ? '已保存' : '已是最新，无需更新'} ${styleText('bold', credential.email)}`);
+        report(symbols.success, `${changed ? '已保存' : '已是最新，无需更新'} ${styleText('bold', maskEmail(credential.email))}`);
         added = credential;
         break;
       } catch (error) {
@@ -129,7 +131,7 @@ async function browserAddFlow(store: Session): Promise<boolean> {
       message: '账号已添加，要立即使用吗？',
       choices: [
         { value: false, name: '完成', description: '回到主菜单' },
-        { value: true, name: '立即切换', description: `切换到 ${added.email}` },
+        { value: true, name: '立即切换', description: `切换到 ${maskEmail(added.email)}` },
       ],
       default: false,
       theme: selectTheme('完成'),
@@ -162,11 +164,11 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
         continue;
       }
       if (latest.status === 'behind') {
-        report(symbols.info, `服务端保存的 ${styleText('bold', latest.email)} 版本更新，无需保存`, '可在主菜单选择「更新本机登录」');
+        report(symbols.info, `服务端保存的 ${styleText('bold', maskEmail(latest.email))} 版本更新，无需保存`, '可在主菜单选择「更新本机登录」');
         return false;
       }
       if (latest.status === 'saved') {
-        report(symbols.info, `${styleText('bold', latest.email)} 已是最新，无需更新`, `${fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 2)} 与已保存的凭证一致`);
+        report(symbols.info, `${styleText('bold', maskEmail(latest.email))} 已是最新，无需更新`, `${fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 2)} 与已保存的凭证一致`);
         return false;
       }
       if (latest.status === 'diverged') {
@@ -200,13 +202,13 @@ async function addFlow(store: Session, credentials: Credential[], current: Curre
 async function confirmOverwrite(current: Extract<CurrentLogin, { status: 'ahead' | 'diverged' | 'unsaved' | 'deleted' }>, target: Credential) {
   const warning =
     current.status === 'ahead'
-      ? `当前登录 ${current.email} 有更新尚未保存，切换后会被覆盖。`
-      : `${current.email === null ? '当前 Codex 登录' : `当前登录 ${current.email} `}尚未保存，切换后会被覆盖。`;
+      ? `当前登录 ${maskEmail(current.email)} 有更新尚未保存，切换后会被覆盖。`
+      : `${current.email === null ? '当前 Codex 登录' : `当前登录 ${maskEmail(current.email)} `}尚未保存，切换后会被覆盖。`;
   const save = current.status === 'ahead' ? '先更新保存，再切换' : '先保存当前登录，再切换';
   return escapable((context) =>
     select(
       {
-        message: `即将切换到 ${styleText('cyan', target.email)}\n  ${styleText('yellow', warning)}`,
+        message: `即将切换到 ${styleText('cyan', maskEmail(target.email))}\n  ${styleText('yellow', warning)}`,
         choices: [
           { value: 'save' as const, name: save, description: '保存后再切换，之后可以随时切回来' },
           { value: 'overwrite' as const, name: '不保存，直接切换', description: '当前登录的最新凭证将被覆盖，无法恢复' },
@@ -225,7 +227,7 @@ async function downloadCurrent(store: Session, email: string): Promise<boolean> 
     return false;
   }
   await store.switch({ type: 'codex', email });
-  console.log(line(symbols.success, `已用服务端版本更新本机登录 ${styleText('bold', email)}`));
+  console.log(line(symbols.success, `已用服务端版本更新本机登录 ${styleText('bold', maskEmail(email))}`));
   report(' ', styleText('dim', '请重新启动正在运行的 Codex 会话以使用更新后的凭证。'));
   return true;
 }
@@ -233,7 +235,7 @@ async function downloadCurrent(store: Session, email: string): Promise<boolean> 
 async function resolveDivergence(store: Session, email: string, switching: boolean): Promise<'local' | 'server' | 'back'> {
   const times = await store.refreshTimes(email);
   const decision = await escapable((context) => select({
-    message: `${styleText('bold', email)} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshDetails(times.local, times.server))}`,
+    message: `${styleText('bold', maskEmail(email))} 的本机登录与服务端保存的版本不一致\n  ${styleText('dim', refreshDetails(times.local, times.server))}`,
     choices: [
       { value: 'local' as const, name: switching ? '先用本机登录覆盖服务端，再切换' : '用本机登录覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
       switching
@@ -268,7 +270,7 @@ async function backupBeforeSwitch(store: Session, credentials: Credential[], tar
     }
     const saved = await trySave(store, credentials, store.codexAuthPath, store.snapshotDigest(current.email));
     if (saved?.email === target.email) {
-      report(symbols.info, `${saved.email} 就是当前登录的账号，无需切换。`);
+      report(symbols.info, `${maskEmail(saved.email)} 就是当前登录的账号，无需切换。`);
       return 'done' as const;
     }
     return saved ? 'switch' as const : 'back' as const;
@@ -283,7 +285,7 @@ async function backupBeforeSwitch(store: Session, credentials: Credential[], tar
     }
     const saved = await trySave(store, credentials, store.codexAuthPath);
     if (saved?.email === target.email) {
-      report(symbols.info, `${saved.email} 就是当前登录的账号，无需切换。`);
+      report(symbols.info, `${maskEmail(saved.email)} 就是当前登录的账号，无需切换。`);
       return 'done' as const;
     }
     if (saved) {
@@ -356,7 +358,7 @@ async function switchTo(store: Session, credentials: Credential[], target: Crede
       return 'cancel';
     }
     await store.switch(target);
-    console.log(line(symbols.success, `已切换到 ${styleText('bold', target.email)}`));
+    console.log(line(symbols.success, `已切换到 ${styleText('bold', maskEmail(target.email))}`));
     report(' ', styleText('dim', '请重新启动正在运行的 Codex 会话以使用新账号。'));
   }
   return 'done';
@@ -375,7 +377,7 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
   }
   const active = 'email' in current && current.email === selected.email;
   const confirmed = await escapable((context) => select({
-    message: `确认从服务端删除 ${styleText('cyan', selected.email)}？\n  ${styleText('yellow', '删除后无法恢复。')}${active ? styleText('dim', ` 本机 ${tildify(store, store.codexAuthPath)} 不受影响。`) : ''}`,
+    message: `确认从服务端删除 ${styleText('cyan', maskEmail(selected.email))}？\n  ${styleText('yellow', '删除后无法恢复。')}${active ? styleText('dim', ` 本机 ${tildify(store, store.codexAuthPath)} 不受影响。`) : ''}`,
     choices: [
       { value: false, name: '取消', description: '保留该账号' },
       { value: true, name: '删除', description: '从服务端移除该账号保存的凭证' },
@@ -388,18 +390,18 @@ async function deleteFlow(store: Session, credentials: Credential[], current: Cu
   }
   try {
     await store.delete(selected);
-    report(symbols.success, `已删除 ${styleText('bold', selected.email)}`, active ? '已从凭证库删除，本机登录保留' : undefined);
+    report(symbols.success, `已删除 ${styleText('bold', maskEmail(selected.email))}`, active ? '已从凭证库删除，本机登录保留' : undefined);
   } catch (error) {
     if (!(error instanceof ServiceError) || error.status !== 409) {
       throw error;
     }
-    report(symbols.warning, styleText('yellow', `${selected.email} 在服务端已被更新，未删除。`), '列表已刷新，请重新决定');
+    report(symbols.warning, styleText('yellow', `${maskEmail(selected.email)} 在服务端已被更新，未删除。`), '列表已刷新，请重新决定');
   }
 }
 
 export async function menu(store: Session): Promise<void> {
   if (store.server === 'local') {
-    console.log(pathLabel(styleText('dim', '数据目录'), store.home));
+    console.log(pathLabel(styleText('dim', '数据目录'), maskHomePath(store.home, store.userHome)));
   } else console.log(pathLabel(styleText('dim', '服务地址'), store.url));
   const authPath = tildify(store, store.codexAuthPath);
   console.log(pathLabel(styleText('dim', '登录文件'), authPath));
@@ -450,10 +452,10 @@ export async function switchAccount(store: Session, email?: string): Promise<voi
   const credentials = await store.list();
   if (email !== undefined) {
     const target = credentials.find((credential) => credential.email === email);
-    if (!target) throw new Error(`未找到已保存的账号：${email}。`);
+    if (!target) throw new Error(`未找到已保存的账号：${maskEmail(email)}。`);
     const current = await store.current();
     if (current.status === 'saved' && current.email === email) {
-      report(symbols.info, `${email} 就是当前登录的账号，无需切换。`);
+      report(symbols.info, `${maskEmail(email)} 就是当前登录的账号，无需切换。`);
       return;
     }
     await switchTo(store, credentials, target);

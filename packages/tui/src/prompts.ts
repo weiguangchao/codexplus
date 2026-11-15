@@ -1,7 +1,7 @@
 import { select } from '@inquirer/prompts';
 import { emitKeypressEvents } from 'node:readline';
 import { styleText } from 'node:util';
-import { refreshDetails, selectTheme } from './ui.js';
+import { maskEmail, refreshDetails, selectTheme } from './ui.js';
 
 export const BACK = Symbol('back');
 
@@ -44,7 +44,7 @@ export function isCancel(error: unknown): boolean {
 
 export async function confirmUpload(details: Record<string, unknown>): Promise<boolean> {
   const answer = await escapable((context) => select({
-    message: `服务端已保存 ${styleText('cyan', String(details.email))}，内容与本次上传不同\n  ${styleText('dim', refreshDetails(details.localRefresh, details.lastRefresh, '本次上传的'))}`,
+    message: `服务端已保存 ${styleText('cyan', maskEmail(String(details.email)))}，内容与本次上传不同\n  ${styleText('dim', refreshDetails(details.localRefresh, details.lastRefresh, '本次上传的'))}`,
     choices: [
       { value: false, name: '返回', description: '不做更改' },
       { value: true, name: '用本次上传覆盖服务端', description: '服务端保存的版本将被替换，无法恢复' },
@@ -57,7 +57,7 @@ export async function confirmUpload(details: Record<string, unknown>): Promise<b
 
 export async function confirmRestore(email: string | null): Promise<boolean> {
   const answer = await escapable((context) => select({
-    message: email === null ? '无法识别这份凭证的账号，保存可能重新添加刚删除的账号。继续吗？' : `将重新保存刚删除的账号 ${styleText('cyan', email)}，继续吗？`,
+    message: email === null ? '无法识别这份凭证的账号，保存可能重新添加刚删除的账号。继续吗？' : `将重新保存刚删除的账号 ${styleText('cyan', maskEmail(email))}，继续吗？`,
     choices: [
       { value: false, name: '取消', description: '保留删除结果，本机登录不变' },
       { value: true, name: email === null ? '确认保存' : '重新保存', description: '把这份凭证保存到服务端' },

@@ -8,8 +8,10 @@ import { CredentialStore } from '@weiguangchao/codexplus-server';
 import { authDigest } from '@weiguangchao/codexplus-shared';
 import { standalone, temporaryHome } from './helpers.js';
 
-const first = 'a@example.com';
-const second = 'b@example.com';
+const first = 'alice@example.com';
+const second = 'brian@icloud.com';
+const firstLabel = 'al***ce@e***';
+const secondLabel = 'br***an@i***';
 const auth = (email: string, token = email) => JSON.stringify({ tokens: {
   access_token: `fake-access-${token}`,
   id_token: `h.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.s`,
@@ -56,13 +58,14 @@ test('status 和 list 在无 TTY 的真实 CLI 中输出状态和排序列表，
   assert.doesNotMatch(status.stdout, /运行模式|本地模式/u);
   assert.ok(status.stdout.includes(`数据目录  ${home}`));
   assert.ok(status.stdout.includes(`登录文件  ${join(root, 'codex', 'auth.json')}`));
-  assert.match(status.stdout, /当前账号.*a@example.com[\s\S]*已保存.*2 个/u);
+  assert.match(status.stdout, /当前账号.*al\*{3}ce@e\*{3}[\s\S]*已保存.*2 个/u);
   const list = await run(root, ['list']);
   assert.equal(list.code, 0, list.stderr);
-  assert.equal(list.stdout, `${first}  ← 当前\n${second}\n`);
+  assert.equal(list.stdout, `${firstLabel}  ← 当前\n${secondLabel}\n`);
   for (const result of [status, list]) {
     assert.equal(result.stderr, '');
     assert.doesNotMatch(result.stdout, /fake-access|id_token|要做什么/u);
+    assert.ok(!result.stdout.includes(first) && !result.stdout.includes(second));
     assert.ok(!result.stdout.includes(String.fromCharCode(27)));
   }
   assert.equal(await readFile(join(root, 'codex', 'auth.json'), 'utf8'), content);
@@ -82,7 +85,7 @@ test('status 区分未登录、无效文件和未保存，list 仍显示损坏�
   await writeFile(join(home, 'credentials', `codex-${second}`, 'auth.json'), '{broken');
   const list = await run(root, ['list']);
   assert.equal(list.code, 0, list.stderr);
-  assert.equal(list.stdout, `${second}  凭证文件缺失或损坏\n`);
+  assert.equal(list.stdout, `${secondLabel}  凭证文件缺失或损坏\n`);
 });
 
 test('独立本机服务端的 status 和 list 支持无 TTY，服务中断时返回连接错误', async (context) => {
@@ -100,7 +103,7 @@ test('独立本机服务端的 status 和 list 支持无 TTY，服务中断时�
   assert.ok(status.stdout.startsWith(`服务地址  ${server.url}\n`));
   const list = await run(root, ['list', '--port', port]);
   assert.equal(list.code, 0, list.stderr);
-  assert.equal(list.stdout, `${first}  ← 当前\n`);
+  assert.equal(list.stdout, `${firstLabel}  ← 当前\n`);
   await server.close();
   for (const command of ['status', 'list']) {
     const failed = await run(root, [command, '--port', port]);
@@ -128,7 +131,8 @@ test('指定账号通过服务端切换登录并保存同步基线，不进入�
   await login(root, auth(first));
   const result = await run(root, ['switch', second]);
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stdout, /已切换到 b@example.com/u);
+  assert.ok(result.stdout.includes(`已切换到 ${secondLabel}`));
+  assert.ok(!result.stdout.includes(second));
   assert.doesNotMatch(result.stdout, /要做什么|fake-access/u);
   assert.deepEqual(JSON.parse(await readFile(join(root, 'codex', 'auth.json'), 'utf8')), JSON.parse(auth(second)));
   const config = JSON.parse(await readFile(join(home, 'login.json'), 'utf8'));
