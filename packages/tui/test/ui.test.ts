@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
 import { Separator } from '@inquirer/prompts';
-import { addChoices, deleteChoices, displayWidth, fit, line, mainChoices, maskEmail, maskHomePath, renderStatus, selectTheme, switchChoices } from '../src/ui.js';
+import { addChoices, deleteChoices, displayWidth, fit, line, mainChoices, maskEmail, maskHomePath, renderStatus, resetCardChoices, selectTheme, switchChoices } from '../src/ui.js';
 
 const alice = { type: 'codex' as const, email: 'alice@example.com' };
 const bob = { type: 'codex' as const, email: 'bob@example.com' };
@@ -99,6 +99,24 @@ test('切换列表禁用当前账号并默认选中其他账号', () => {
   assert.ok(first && !(first instanceof Separator) && 'disabled' in first && first.disabled);
   assert.equal(switchChoices([alice], { status: 'saved', email: 'alice@example.com' }).default, null);
   assert.deepEqual(switchChoices([alice, bob], { status: 'none' }).default, alice);
+});
+
+test('重置卡列表标记当前账号但仍可选择，并在返回前保留分隔线', () => {
+  for (const status of ['saved', 'ahead', 'behind', 'diverged', 'unsaved'] as const) {
+    const choices = resetCardChoices([alice, bob], { status, email: alice.email });
+    const [current, other, divider, back] = choices;
+    assert.ok(current && other && back && !(current instanceof Separator) && !(other instanceof Separator) && !(back instanceof Separator));
+    assert.equal(plain(current.name), 'al***ce@e*** ● 当前');
+    assert.equal(current.value, alice);
+    assert.ok(!('disabled' in current && current.disabled));
+    assert.equal(other.name, '***@e***');
+    assert.equal(other.value, bob);
+    assert.ok(divider instanceof Separator);
+    assert.equal(back.value, null);
+  }
+  for (const current of [{ status: 'none' }, { status: 'saved', email: 'other@example.com' }] as const) {
+    assert.ok(resetCardChoices([alice, bob], current).every((choice) => choice instanceof Separator || !choice.name.includes('当前')));
+  }
 });
 
 test('添加来源在找不到 Codex 登录时禁用', () => {

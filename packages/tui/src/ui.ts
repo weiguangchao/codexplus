@@ -11,6 +11,7 @@ export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
 const unicode = figures.tick === mainSymbols.tick;
 const dots = { filled: unicode ? '●' : figures.circleFilled, empty: unicode ? '○' : figures.circle };
+const currentLabel = () => styleText('green', `${dots.filled} 当前`);
 const keyLabels: Record<string, string> = { navigate: '移动', select: '确认' };
 
 export const symbols = {
@@ -182,7 +183,7 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin) 
             value: credential as Credential | null,
             name: maskEmail(credential.email),
             description: '这是正在使用的账号',
-            disabled: styleText('green', `${dots.filled} 当前`),
+            disabled: currentLabel(),
           }
         : { value: credential as Credential | null, name: maskEmail(credential.email) },
     ),
@@ -191,6 +192,20 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin) 
   ];
   const first = credentials.find((credential) => credential.email !== active) ?? null;
   return { choices, default: first };
+}
+
+export function resetCardChoices(credentials: Credential[], current: CurrentLogin) {
+  const active = 'email' in current ? current.email : null;
+  return [
+    ...credentials.map((credential) => ({
+      value: credential as Credential | null,
+      name: credential.email === active
+        ? `${styleText('dim', maskEmail(credential.email))} ${currentLabel()}`
+        : maskEmail(credential.email),
+    })),
+    divider(),
+    { value: null, name: '返回', description: '回到主菜单' },
+  ];
 }
 
 export function deleteChoices(credentials: Credential[], digest: (email: string) => string | null) {
