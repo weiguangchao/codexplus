@@ -11,12 +11,18 @@ test('服务名或协议版本不匹配时只做健康检查，旧远程令牌�
   const userHome = await temporaryHome(context);
   let health = { service: 'other', version: 2, id: 'new' };
   const tokens: string[] = [];
-  const paths: string[] = [];
-  const server = createServer((request, response) => {
-    paths.push(request.url ?? '');
+  const methods: string[] = [];
+  const server = createServer(async (request, response) => {
+    assert.equal(request.url, '/rpc');
+    assert.equal(request.method, 'POST');
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk as Buffer));
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    methods.push(body.method);
     if (request.headers.authorization) tokens.push(request.headers.authorization);
     response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify(request.url === '/v1/login/info' ? { home: userHome, userHome, authPath: join(userHome, '.codex', 'auth.json') } : health));
+    response.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: body.method === 'login.info' ?
+      { home: userHome, userHome, authPath: join(userHome, '.codex', 'auth.json') } : health }));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   context.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
@@ -37,7 +43,7 @@ test('服务名或协议版本不匹配时只做健康检查，旧远程令牌�
   health.version = protocolVersion;
   const session = await client.connect(options);
   await session.close();
-  assert.deepEqual(paths, [...Array(4).fill('/v1/health'), '/v1/login/info']);
+  assert.deepEqual(methods, [...Array(4).fill('health'), 'login.info']);
   assert.equal(await readFile(join(client.home, 'client.json'), 'utf8'), before);
   assert.deepEqual(tokens, []);
 });
@@ -56,8 +62,8 @@ test('本机服务端的重定向不会被跟随，也不改写客户端配置',
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   await assert.rejects(client.connect({ port: address.port }), /无法连接/u);
-  assert.deepEqual(paths, ['/v1/health']);
+  assert.deepEqual(paths, ['/rpc']);
   await assert.rejects(readFile(join(client.home, 'client.json')), { code: 'ENOENT' });
-  await assert.rejects(requestService(`http://127.0.0.1:${address.port}`, '/v1/credentials', { auth: { tokens: { access_token: 'secret' } }, base: null }), /无法连接/u);
-  assert.deepEqual(paths, ['/v1/health', '/v1/credentials']);
+  await assert.rejects(requestService(`http://127.0.0.1:${address.port}`, 'credentials.upload', { auth: { tokens: { access_token: 'secret' } }, base: null }), /无法连接/u);
+  assert.deepEqual(paths, ['/rpc', '/rpc']);
 });

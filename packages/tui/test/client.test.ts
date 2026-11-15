@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { authDigest } from '@weiguangchao/codexplus-shared';
+import { authDigest, requestService, ServiceError } from '@weiguangchao/codexplus-shared';
 import { UploadCancelled } from '../src/client.js';
 import { filtered, loginState, makeClient, original, standalone, temporaryHome } from './helpers.js';
 
@@ -18,9 +18,9 @@ test('两个本机客户端使用独立端口，退出一个不影响另一个',
   context.after(() => second.close());
   assert.equal(started.length, 2);
   assert.notEqual(first.url, second.url);
-  assert.equal((await fetch(`${first.url}/v1/health`)).status, 200);
-  assert.equal((await fetch(`${first.url}/v1/credentials`)).status, 401);
-  assert.equal((await fetch(`${second.url}/v1/credentials`, { headers: { Authorization: 'Bearer invalid-session' } })).status, 401);
+  assert.equal((await requestService(first.url, 'health') as { service: string }).service, 'codexplus');
+  await assert.rejects(requestService(first.url, 'credentials.list'), (error) => error instanceof ServiceError && error.status === 401);
+  await assert.rejects(requestService(second.url, 'credentials.list', undefined, 'invalid-session'), (error) => error instanceof ServiceError && error.status === 401);
   await first.close();
   assert.deepEqual(await second.list(), []);
   assert.deepEqual(await loginState(client.home), { baseline: null });
@@ -211,7 +211,7 @@ test('通过本机端口连接独立服务端，关闭客户端不停止服务�
   await session.switch(credential);
   await session.close();
   assert.deepEqual(started, []);
-  assert.equal((await fetch(`${server.url}/v1/health`)).status, 200);
+  assert.equal((await requestService(server.url, 'health') as { service: string }).service, 'codexplus');
   assert.deepEqual(await readJson(session.codexAuthPath), filtered);
   assert.deepEqual((await loginState(home)).baseline, { email: credential.email, digest: authDigest(JSON.stringify(filtered)) });
   const local = await client.connect();

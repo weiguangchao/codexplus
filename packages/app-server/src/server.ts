@@ -5,7 +5,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { recordAudit, recordCommitted } from './audit.js';
-import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion } from '@weiguangchao/codexplus-shared';
+import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion, rpcPath } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from './store.js';
 import { CurrentLoginStore } from './current-login.js';
 import type { SaveOptions } from './current-login.js';
@@ -16,14 +16,11 @@ import { restartCodexServer } from './restart-codex.js';
 import { listResetCards, useResetCard } from './reset-cards.js';
 import { lookupAccountInfo } from './account-info.js';
 import { idTokenEmail } from './login.js';
+import { dispatchRpc, rpcError, RpcError } from './rpc.js';
 
-class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
+class HttpError extends ServiceError {}
 
-async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(request: IncomingMessage): Promise<unknown> {
   if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') {
     throw new HttpError(415, '请求必须使用 application/json。');
   }
@@ -38,13 +35,9 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
     chunks.push(buffer);
   }
   try {
-    const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (!isRecord(body)) {
-      throw new Error();
-    }
-    return body;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
   } catch {
-    throw new HttpError(400, '请求 JSON 格式无效。');
+    throw new RpcError(-32700, '请求 JSON 格式无效。');
   }
 }
 
@@ -62,104 +55,96 @@ export async function startServer({
   const browsers = new BrowserSessions(login);
   const client = { id: 'local', name: '本机' };
 
-  async function route(request: IncomingMessage, body: Record<string, unknown>): Promise<unknown> {
-    const path = request.url ?? '';
-    if (request.method === 'GET' && path === '/v1/health') {
-      return { service: 'codexplus', version: protocolVersion };
-    }
-    if (sessionToken !== undefined) {
-      const provided = Buffer.from(request.headers.authorization ?? '');
-      const expected = Buffer.from(`Bearer ${sessionToken}`);
-      if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
-        throw new HttpError(401, '本机会话无效，请重新启动客户端。');
-      }
-    }
-    if (request.method === 'GET' && path === '/v1/credentials') {
+  async function invoke(method: string, params: unknown): Promise<unknown> {
+    if (!isRecord(params)) throw new RpcError(-32602, 'params 必须为命名参数对象。');
+    const body = params;
+    if (method === 'health') return { service: 'codexplus', version: protocolVersion };
+    if (method === 'credentials.list') {
       return { credentials: await store.snapshots() };
     }
-    if (request.method === 'GET' && path === '/v1/login/info') return await current.info();
-    if (request.method === 'GET' && path === '/v1/login') return { current: await current.current() };
-    if (request.method === 'GET' && path === '/v1/login/processes') return { processes: await findProcesses() };
-    if (request.method === 'GET' && path === '/v1/login/account-info') {
+    if (method === 'login.info') return await current.info();
+    if (method === 'login.current') return { current: await current.current() };
+    if (method === 'login.processes') return { processes: await findProcesses() };
+    if (method === 'login.accountInfo') {
       try {
         const { content } = await current.readSource(current.authPath);
         const info = await lookupAccountInfo(parseAuth(content).tokens, accountRequest);
         return { ...info, email: info.email ?? idTokenEmail(content) };
       } catch (error) {
         if (error instanceof ServiceError) throw error;
-        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        if (error instanceof Error && !('code' in error)) throw new ServiceError(400, error.message);
         throw error;
       }
     }
-    if (request.method === 'POST' && ['/v1/reset-cards', '/v1/reset-cards/use'].includes(path)) {
+    if (['resetCards.list', 'resetCards.use'].includes(method)) {
       try {
         const credential = parseCredential(body);
-        if (path === '/v1/reset-cards') {
+        if (method === 'resetCards.list') {
           return { cards: await listResetCards(parseAuth(await store.get(credential)).tokens, accountRequest) };
         }
         if (typeof body.cardId !== 'string' || !body.cardId.trim() ||
           typeof body.requestId !== 'string' || !body.requestId.trim()) {
-          throw new HttpError(400, '使用重置卡必须提供 cardId 和 requestId。');
+          throw new ServiceError(400, '使用重置卡必须提供 cardId 和 requestId。');
         }
         const { tokens } = parseAuth(await store.get(credential));
         const outcome = await useResetCard(tokens, body.cardId, body.requestId, accountRequest);
         if (outcome === 'reset') await recordCommitted(home, '重置', client, { email: credential.email });
         return { outcome };
       } catch (error) {
-        if (error instanceof HttpError) throw error;
-        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        if (error instanceof ServiceError) throw error;
+        if (error instanceof Error && !('code' in error)) throw new ServiceError(400, error.message);
         throw error;
       }
     }
-    if (request.method === 'POST' && ['/v1/login/save', '/v1/login/switch', '/v1/login/refresh-times', '/v1/login/restart-server',
-      '/v1/credentials/import', '/v1/credentials/validate', '/v1/login/browser/start', '/v1/login/browser/status',
-      '/v1/login/browser/save', '/v1/login/browser/cancel'].includes(path)) {
+    if (['login.save', 'login.switch', 'login.refreshTimes', 'login.restartServer',
+      'credentials.import', 'credentials.validate', 'login.browser.start', 'login.browser.status',
+      'login.browser.save', 'login.browser.cancel'].includes(method)) {
       try {
         const options: SaveOptions = {};
         if (Object.hasOwn(body, 'base')) {
-          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, 'base 必须为摘要或 null。');
+          if (body.base !== null && typeof body.base !== 'string') throw new ServiceError(400, 'base 必须为摘要或 null。');
           options.base = body.base;
         }
         if (Object.hasOwn(body, 'restore')) {
-          if (typeof body.restore !== 'boolean') throw new HttpError(400, 'restore 必须为布尔值。');
+          if (typeof body.restore !== 'boolean') throw new ServiceError(400, 'restore 必须为布尔值。');
           options.restore = body.restore;
         }
-        if (path === '/v1/login/save') return await current.saveCurrent(options);
-        if (path === '/v1/login/switch') return await current.switch(parseCredential(body));
-        if (path === '/v1/login/restart-server') {
+        if (method === 'login.save') return await current.saveCurrent(options);
+        if (method === 'login.switch') return await current.switch(parseCredential(body));
+        if (method === 'login.restartServer') {
           await restartServer(dirname(current.authPath));
           return { ok: true };
         }
-        if (path === '/v1/login/refresh-times') return await current.refreshTimes(parseCredential(body).email);
-        if (path === '/v1/credentials/import' || path === '/v1/credentials/validate') {
-          if (typeof body.path !== 'string') throw new HttpError(400, '请输入 auth.json 文件路径。');
-          if (path === '/v1/credentials/import') return await current.import(body.path, options);
+        if (method === 'login.refreshTimes') return await current.refreshTimes(parseCredential(body).email);
+        if (method === 'credentials.import' || method === 'credentials.validate') {
+          if (typeof body.path !== 'string') throw new ServiceError(400, '请输入 auth.json 文件路径。');
+          if (method === 'credentials.import') return await current.import(body.path, options);
           await current.readSource(body.path);
           return { ok: true };
         }
-        if (path === '/v1/login/browser/start') return browsers.start();
-        if (typeof body.id !== 'string') throw new HttpError(400, '缺少浏览器登录标识。');
-        if (path === '/v1/login/browser/status') return browsers.status(body.id);
-        if (path === '/v1/login/browser/save') return await current.save(browsers.auth(body.id), false, options);
+        if (method === 'login.browser.start') return browsers.start();
+        if (typeof body.id !== 'string') throw new ServiceError(400, '缺少浏览器登录标识。');
+        if (method === 'login.browser.status') return browsers.status(body.id);
+        if (method === 'login.browser.save') return await current.save(browsers.auth(body.id), false, options);
         await browsers.cancel(body.id);
         return { ok: true };
       } catch (error) {
-        if (error instanceof HttpError || error instanceof ServiceError) throw error;
-        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        if (error instanceof ServiceError) throw error;
+        if (error instanceof Error && !('code' in error)) throw new ServiceError(400, error.message);
         throw error;
       }
     }
-    if (request.method === 'POST' && (path === '/v1/credentials' || path === '/v1/credentials/download' || path === '/v1/credentials/delete')) {
+    if (['credentials.upload', 'credentials.download', 'credentials.delete'].includes(method)) {
       try {
-        if (path === '/v1/credentials') {
-          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '上传必须提供 base 摘要或 null。');
+        if (method === 'credentials.upload') {
+          if (body.base !== null && typeof body.base !== 'string') throw new ServiceError(400, '上传必须提供 base 摘要或 null。');
           const result = await store.add(JSON.stringify(body.auth), body.base);
           if (result.changed) await recordCommitted(home, '上传', client, { email: result.credential.email });
           return result;
         }
         const credential = parseCredential(body);
-        if (path === '/v1/credentials/delete') {
-          if (body.base !== null && typeof body.base !== 'string') throw new HttpError(400, '删除必须提供 base 摘要或 null。');
+        if (method === 'credentials.delete') {
+          if (body.base !== null && typeof body.base !== 'string') throw new ServiceError(400, '删除必须提供 base 摘要或 null。');
           await current.delete(credential, body.base);
           return { ok: true };
         }
@@ -169,12 +154,12 @@ export async function startServer({
       } catch (error) {
         if (error instanceof ServiceError) throw error;
         if (error instanceof Error && !('code' in error)) {
-          throw new HttpError(400, error.message);
+          throw new ServiceError(400, error.message);
         }
         throw error;
       }
     }
-    throw new HttpError(404, '未找到服务端接口。');
+    throw new RpcError(-32601, '未找到服务端方法。');
   }
 
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
@@ -189,14 +174,30 @@ export async function startServer({
       if (!hosts.includes(request.headers.host ?? '')) {
         throw new HttpError(403, '仅接受本机地址的请求。');
       }
-      const body = request.method === 'POST' ? await readBody(request) : {};
+      if (request.url !== rpcPath) throw new HttpError(404, '未找到服务端接口。');
+      if (request.method !== 'POST') {
+        response.setHeader('Allow', 'POST');
+        throw new HttpError(405, 'JSON-RPC 接口仅接受 POST 请求。');
+      }
+      const body = await readBody(request);
+      if (sessionToken !== undefined) {
+        const provided = Buffer.from(request.headers.authorization ?? '');
+        const expected = Buffer.from(`Bearer ${sessionToken}`);
+        const calls = Array.isArray(body) ? body : [body];
+        const healthOnly = calls.length > 0 && calls.every((call) => isRecord(call) && call.method === 'health');
+        if (!healthOnly && (provided.length !== expected.length || !timingSafeEqual(provided, expected))) {
+          throw new HttpError(401, '本机会话无效，请重新启动客户端。');
+        }
+      }
       await ready;
-      response.end(JSON.stringify(await route(request, body)));
+      const result = await dispatchRpc(body, invoke);
+      if (result === undefined) response.statusCode = 204;
+      response.end(result === undefined ? undefined : JSON.stringify(result));
     };
     void handle().catch((error: unknown) => {
       request.resume();
-      response.statusCode = error instanceof HttpError || error instanceof ServiceError ? error.status : 500;
-      response.end(JSON.stringify({ error: error instanceof HttpError || error instanceof ServiceError ? error.message : '服务端操作失败，请检查服务端文件权限和配置。', ...(error instanceof ServiceError ? error.details : {}) }));
+      response.statusCode = error instanceof HttpError ? error.status : error instanceof RpcError ? 200 : 500;
+      response.end(JSON.stringify(rpcError(null, error)));
     });
   };
   const server = createServer(handler);

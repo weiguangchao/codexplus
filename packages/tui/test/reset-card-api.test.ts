@@ -58,9 +58,9 @@ test('真实 C/S 流程按所选账号查询并使用指定卡片，不切换登
   assert.deepEqual((await readAudit(home)).map(({ event, email }) => ({ event, email })), [{ event: '重置', email: bob.email }]);
   assert.doesNotMatch(wire.join(''), /fake-|access_token|refresh_token|never-send-refresh/u);
   const count = upstream.length;
-  await assert.rejects(requestService(server.url, '/v1/reset-cards', { ...bob, email: 'missing@example.com' }), /未找到/u);
+  await assert.rejects(requestService(server.url, 'resetCards.list', { ...bob, email: 'missing@example.com' }), /未找到/u);
   for (const body of [{ ...bob }, { ...bob, cardId: 'card' }, { ...bob, cardId: '', requestId: 'id' }, { ...bob, cardId: 'card', requestId: 42 }]) {
-    await assert.rejects(requestService(server.url, '/v1/reset-cards/use', body), /cardId 和 requestId/u);
+    await assert.rejects(requestService(server.url, 'resetCards.use', body), /cardId 和 requestId/u);
   }
   assert.equal(upstream.length, count);
 });
@@ -94,7 +94,8 @@ test('结果未知时不自动重试，同一账号和卡片重试沿用请求 I
 
 test('客户端拒绝异常列表和使用结果，不伪造成功或自动重复请求', async (context) => {
   let result: unknown = { cards: [{ id: 'broken' }] };
-  const fetchMock = context.mock.method(globalThis, 'fetch', async () => Response.json(result));
+  const fetchMock = context.mock.method(globalThis, 'fetch', async (_url: string, options: RequestInit) =>
+    Response.json({ jsonrpc: '2.0', id: JSON.parse(String(options.body)).id, result }));
   const session = new Session('http://127.0.0.1:12345', '/synthetic-user', '/synthetic-user/codex/auth.json', async () => {});
   await assert.rejects(session.resetCards(bob), /格式无效/u);
   result = { outcome: 'unknown' };

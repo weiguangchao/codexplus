@@ -72,7 +72,8 @@ test('真实 C/S 查询当前登录而非已保存账号，刷新重新读凭证
 
 test('客户端验证详情字段，不接受无效日期、额度或异常响应', async (context) => {
   let result: unknown;
-  context.mock.method(globalThis, 'fetch', async () => Response.json(result));
+  context.mock.method(globalThis, 'fetch', async (_url: string, options: RequestInit) =>
+    Response.json({ jsonrpc: '2.0', id: JSON.parse(String(options.body)).id, result }));
   const session = new Session('http://127.0.0.1:12345', '/demo', '/demo/auth.json', async () => {});
   const valid = { email: null, planType: 'plus', expiresAt: null, fiveHour: null, weekly: null };
   for (const value of [null, {}, { ...valid, expiresAt: 'bad' }, { ...valid, fiveHour: { remainingPercent: 101, resetsAt: null } },

@@ -51,9 +51,11 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
   assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'import-secret');
   assert.equal(JSON.parse(await readFile(clientAuth, 'utf8')).tokens.access_token, 'client-must-stay');
   await assert.rejects(stat(clientHome), { code: 'ENOENT' });
-  assert.ok(requests.some((request) => request.url.endsWith('/v1/login/save')));
-  assert.ok(requests.some((request) => request.url.endsWith('/v1/login/switch')));
-  assert.ok(requests.every((request) => !request.url.endsWith('/v1/credentials/download')));
+  assert.ok(requests.every((request) => request.url.endsWith('/rpc')));
+  const methods = requests.map((request) => JSON.parse(request.body).method);
+  assert.ok(methods.includes('login.save'));
+  assert.ok(methods.includes('login.switch'));
+  assert.ok(!methods.includes('credentials.download'));
   for (const request of requests) assert.doesNotMatch(request.body + request.response, /server-secret|import-secret|client-must-stay|access_token|id_token/u);
 });
 

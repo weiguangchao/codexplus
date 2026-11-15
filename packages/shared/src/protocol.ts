@@ -1,7 +1,22 @@
 import { authDigest, parseAuth, credentialDirectory, isRecord } from './auth.js';
+import { randomUUID } from 'node:crypto';
 
 export const defaultPort = 47831;
-export const protocolVersion = 4;
+export const protocolVersion = 5;
+export const rpcPath = '/rpc';
+
+export type RpcId = string | number | null;
+
+export interface RpcRequest {
+  jsonrpc: '2.0';
+  method: string;
+  params?: object;
+  id?: RpcId;
+}
+
+export type RpcResponse =
+  | { jsonrpc: '2.0'; id: RpcId; result: unknown }
+  | { jsonrpc: '2.0'; id: RpcId; error: { code: number; message: string; data?: unknown } };
 
 export interface Credential {
   type: 'codex';
@@ -24,7 +39,7 @@ export type CurrentLogin =
   | { status: 'unsaved'; email: string | null };
 
 export class ServiceError extends Error {
-  constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}) {
+  constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}, readonly rpcCode?: number) {
     super(message);
   }
 }
@@ -37,22 +52,23 @@ export function parseCredential(value: unknown): Credential {
   return { type: 'codex', email: value.email };
 }
 
-export async function requestService(url: string, path: string, body?: unknown, sessionToken?: string, timeoutMs = 20_000): Promise<unknown> {
+export async function requestService(url: string, method: string, params?: object, sessionToken?: string, timeoutMs = 20_000): Promise<unknown> {
   const address = new URL(url);
   if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || address.username || address.password || address.search || address.hash || address.pathname !== '/') {
     throw new Error('仅支持连接 127.0.0.1 上的本机服务端。');
   }
-  if (!path.startsWith('/')) throw new Error('服务端接口路径必须以 / 开头。');
+  const id = randomUUID();
+  const body: RpcRequest = { jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) };
   let response: Response;
   try {
-    response = await fetch(`${address.origin}${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
+    response = await fetch(`${address.origin}${rpcPath}`, {
+      method: 'POST',
       headers: {
         Accept: 'application/json',
         ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        'Content-Type': 'application/json',
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'error',
     });
@@ -65,11 +81,22 @@ export async function requestService(url: string, path: string, body?: unknown, 
   } catch {
     throw new ServiceError(response.status, '服务端未返回有效的 JSON 数据。');
   }
-  if (!response.ok) {
-    throw new ServiceError(response.status,
-      isRecord(result) && typeof result.error === 'string' ? result.error : `服务端请求失败（HTTP ${response.status}）。`, isRecord(result) ? result : {});
+  if (!isRecord(result) || result.jsonrpc !== '2.0' || (result.id !== id && (response.ok || result.id !== null)) ||
+    Object.hasOwn(result, 'result') === Object.hasOwn(result, 'error')) {
+    throw new ServiceError(response.ok ? 502 : response.status, '服务端未返回有效的 JSON-RPC 响应。');
   }
-  return result;
+  if (Object.hasOwn(result, 'error')) {
+    const error = result.error;
+    if (!isRecord(error) || !Number.isInteger(error.code) || typeof error.message !== 'string') {
+      throw new ServiceError(response.ok ? 502 : response.status, '服务端未返回有效的 JSON-RPC 错误。');
+    }
+    const data = isRecord(error.data) ? error.data : {};
+    const status = typeof data.status === 'number' && Number.isInteger(data.status) && data.status >= 400 && data.status <= 599 ?
+      data.status : error.code === -32601 ? 404 : [-32700, -32600, -32602].includes(Number(error.code)) ? 400 : 500;
+    throw new ServiceError(response.ok ? status : response.status, error.message, data, Number(error.code));
+  }
+  if (!response.ok) throw new ServiceError(response.status, `服务端请求失败（HTTP ${response.status}）。`);
+  return result.result;
 }
 
 export function conflict(email: string, content: string | null): ServiceError {

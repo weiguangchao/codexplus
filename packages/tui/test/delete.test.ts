@@ -18,14 +18,14 @@ for (const broken of [null, '{broken', '{"tokens":{}}']) {
     const path = join(store.credentialsPath, 'codex-person@example.com', 'auth.json');
     if (broken === null) await rm(path);
     else await writeFile(path, broken);
-    await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, base }), (error) => {
+    await assert.rejects(requestService(server.url, 'credentials.delete', { ...credential, base }), (error) => {
       assert.ok(error instanceof ServiceError);
       assert.equal(error.status, 409);
       assert.equal(error.details.digest, null);
       assert.equal(error.details.lastRefresh, null);
       return true;
     });
-    await requestService(server.url, '/v1/credentials/delete', { ...credential, base: null });
+    await requestService(server.url, 'credentials.delete', { ...credential, base: null });
     assert.deepEqual(await store.list(), []);
     assert.deepEqual(JSON.parse(await readFile(store.configPath, 'utf8')).credentials, []);
     assert.deepEqual(await readdir(store.credentialsPath), []);
@@ -40,14 +40,14 @@ test('健康快照拒绝 null，删除请求必须提供 base，未注册账号�
   const store = new CredentialStore({ home, request: account });
   const { credential } = await store.add('{"tokens":{"access_token":"test"}}');
   const awaitDigest = await store.digest(credential);
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, base: null }), (error) => {
+  await assert.rejects(requestService(server.url, 'credentials.delete', { ...credential, base: null }), (error) => {
     assert.ok(error instanceof ServiceError);
     assert.equal(error.status, 409);
     assert.equal(error.details.digest, awaitDigest);
     return true;
   });
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', credential), (error) => error instanceof ServiceError && error.status === 400);
-  await assert.rejects(requestService(server.url, '/v1/credentials/delete', { ...credential, email: 'missing@example.com', base: null }), /未找到/u);
+  await assert.rejects(requestService(server.url, 'credentials.delete', credential), (error) => error instanceof ServiceError && error.status === 400);
+  await assert.rejects(requestService(server.url, 'credentials.delete', { ...credential, email: 'missing@example.com', base: null }), /未找到/u);
   assert.equal((await store.list()).length, 1);
 });
 
