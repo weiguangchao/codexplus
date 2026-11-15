@@ -13,9 +13,9 @@ const second: ResetCard = { ...first, id: 'second' };
 type Prompts = NonNullable<Parameters<typeof resetCardFlow>[3]>;
 const prompts: Prompts = { account: async () => null, card: async () => null, confirm: async () => false };
 
-test('主菜单在删除账号之后显示使用 Codex 重置卡，有账号才可进入', () => {
+test('主菜单在查看账户信息之后显示使用 Codex 重置卡，有账号才可进入', () => {
   const choices = mainChoices([alice], { status: 'saved', email: alice.email }).choices;
-  const index = choices.findIndex((choice) => 'value' in choice && choice.value === 'delete');
+  const index = choices.findIndex((choice) => 'value' in choice && choice.value === 'info');
   const reset = choices[index + 1];
   assert.ok(reset && 'value' in reset && reset.value === 'reset');
   assert.equal(reset.name, '使用 Codex 重置卡');

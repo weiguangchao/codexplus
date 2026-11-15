@@ -14,6 +14,8 @@ import { browserLogin } from './browser-login.js';
 import { findCodexProcesses } from './processes.js';
 import { restartCodexServer } from './restart-codex.js';
 import { listResetCards, useResetCard } from './reset-cards.js';
+import { lookupAccountInfo } from './account-info.js';
+import { idTokenEmail } from './login.js';
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -78,6 +80,17 @@ export async function startServer({
     if (request.method === 'GET' && path === '/v1/login/info') return await current.info();
     if (request.method === 'GET' && path === '/v1/login') return { current: await current.current() };
     if (request.method === 'GET' && path === '/v1/login/processes') return { processes: await findProcesses() };
+    if (request.method === 'GET' && path === '/v1/login/account-info') {
+      try {
+        const { content } = await current.readSource(current.authPath);
+        const info = await lookupAccountInfo(parseAuth(content).tokens, accountRequest);
+        return { ...info, email: info.email ?? idTokenEmail(content) };
+      } catch (error) {
+        if (error instanceof ServiceError) throw error;
+        if (error instanceof Error && !('code' in error)) throw new HttpError(400, error.message);
+        throw error;
+      }
+    }
     if (request.method === 'POST' && ['/v1/reset-cards', '/v1/reset-cards/use'].includes(path)) {
       try {
         const credential = parseCredential(body);

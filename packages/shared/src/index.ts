@@ -5,3 +5,4 @@ export * from './protocol.js';
 export * from './options.js';
 export * from './freshness.js';
 export * from './reset-cards.js';
+export * from './account-info.js';
