@@ -37,7 +37,7 @@ export function parseCredential(value: unknown): Credential {
   return { type: 'codex', email: value.email };
 }
 
-export async function requestService(url: string, path: string, body?: unknown, sessionToken?: string): Promise<unknown> {
+export async function requestService(url: string, path: string, body?: unknown, sessionToken?: string, timeoutMs = 20_000): Promise<unknown> {
   const address = new URL(url);
   if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || address.username || address.password || address.search || address.hash || address.pathname !== '/') {
     throw new Error('仅支持连接 127.0.0.1 上的本机服务端。');
@@ -53,7 +53,7 @@ export async function requestService(url: string, path: string, body?: unknown, 
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
       redirect: 'error',
     });
   } catch {

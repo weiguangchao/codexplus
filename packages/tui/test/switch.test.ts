@@ -41,7 +41,7 @@ test('明确确认后才执行切换', async () => {
   await switchCredential({ switch: async (selected) => {
     assert.equal(selected, credential);
     events.push('switch');
-  } }, credential, {
+  }, restartCodexServer: async () => assert.fail('普通切换不应重启') }, credential, {
     findProcesses: async () => [{ pid: 4501, command: 'codex' }],
     ask: async () => {
       events.push('confirm');
@@ -55,7 +55,7 @@ test('明确确认后才执行切换', async () => {
 
 test('没有运行中的进程时直接切换，不显示额外确认', async () => {
   let switched = false;
-  await switchCredential({ switch: async () => { switched = true; } }, { type: 'codex', email: 'person@example.com' }, {
+  await switchCredential({ switch: async () => { switched = true; }, restartCodexServer: async () => assert.fail('没有进程时不应重启') }, { type: 'codex', email: 'person@example.com' }, {
     findProcesses: async () => [],
     ask: async () => assert.fail('没有进程时不应再次确认'),
     log: () => {},
@@ -65,7 +65,7 @@ test('没有运行中的进程时直接切换，不显示额外确认', async ()
 
 test('检测失败或 Ctrl+C 取消确认时不执行切换', async () => {
   const credential = { type: 'codex', email: 'person@example.com' } as const;
-  const store = { switch: async () => assert.fail('不应修改凭证') };
+  const store = { switch: async () => assert.fail('不应修改凭证'), restartCodexServer: async () => assert.fail('不应重启') };
   await assert.rejects(switchCredential(store, credential, {
     findProcesses: async () => { throw new Error('检测失败'); },
     ask: async () => assert.fail('检测失败时不应确认'),
@@ -76,6 +76,26 @@ test('检测失败或 Ctrl+C 取消确认时不执行切换', async () => {
     ask: async () => { throw new Error('ExitPromptError'); },
     log: () => {},
   }), /ExitPromptError/u);
+});
+
+test('选择重启时先切换，切换失败不重启，重启失败保留已完成的切换', async () => {
+  const events: string[] = [];
+  const credential = { type: 'codex', email: 'person@example.com' } as const;
+  const options = { findProcesses: async () => [{ pid: 4501, command: 'codex' }], ask: async () => 'restart' as const, log: () => {} };
+  await switchCredential({
+    switch: async () => { events.push('switch'); },
+    restartCodexServer: async () => { events.push('restart'); },
+  }, credential, options);
+  assert.deepEqual(events, ['switch', 'restart']);
+  await assert.rejects(switchCredential({
+    switch: async () => { throw new Error('切换失败'); },
+    restartCodexServer: async () => assert.fail('切换失败不应重启'),
+  }, credential, options), /切换失败/u);
+  await assert.rejects(switchCredential({
+    switch: async () => { events.push('switched-again'); },
+    restartCodexServer: async () => { throw new Error('重启失败'); },
+  }, credential, options), /重启失败/u);
+  assert.deepEqual(events, ['switch', 'restart', 'switched-again']);
 });
 
 test('更新本机登录时，进程确认使用更新文案并说明会改写本机凭证', async () => {

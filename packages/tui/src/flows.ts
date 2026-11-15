@@ -9,6 +9,7 @@ import { pathInput } from './path-input.js';
 import { browserLoginPrompt } from './browser-prompt.js';
 import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
 import { confirmRunningCodex } from './switch.js';
+import type { RunningCodexDecision } from './switch.js';
 import {
   addChoices,
   describeCurrent,
@@ -304,14 +305,15 @@ function logRunningCodex(message: string): void {
   }
 }
 
-async function askRunningCodex({ message, action }: { message: string; default: boolean; action?: 'switch' | 'update' }): Promise<boolean> {
+async function askRunningCodex({ message, action }: { message: string; default: boolean; action?: 'switch' | 'update' }): Promise<RunningCodexDecision> {
   const answer = await escapable((context) =>
-    select(
+    select<RunningCodexDecision>(
       {
         message,
         choices: [
           { value: false, name: '取消，先退出 Codex', description: '回到主菜单，当前凭证不变' },
           { value: true, name: action === 'update' ? '仍然更新' : '仍然切换', description: '将改写本机凭证，正在运行的会话后续请求可能受影响' },
+          ...(action === 'update' ? [] : [{ value: 'restart' as const, name: '仍然切换并重启 codex server', description: '切换后重启 Codex 托管后台服务，可能中断正在运行的任务' }]),
         ],
         default: false,
         theme: selectTheme('取消'),
@@ -319,10 +321,10 @@ async function askRunningCodex({ message, action }: { message: string; default: 
       context,
     ),
   );
-  if (answer === true) {
+  if (answer === true || answer === 'restart') {
     console.log('');
   }
-  return answer === true;
+  return answer === BACK ? false : answer;
 }
 
 async function switchFlow(store: Session, credentials: Credential[], current: CurrentLogin): Promise<boolean> {
@@ -353,13 +355,23 @@ async function switchTo(store: Session, credentials: Credential[], target: Crede
   const next = await backupBeforeSwitch(store, credentials, target);
   if (next === 'back') return 'back';
   if (next === 'switch') {
-    if (!(await confirmRunningCodex({ findProcesses: () => store.processes(), authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex }))) {
+    const decision = await confirmRunningCodex({ findProcesses: () => store.processes(), authPath: fitPath(tildify(store, store.codexAuthPath), (process.stdout.columns || 80) - 4), ask: askRunningCodex, log: logRunningCodex });
+    if (!decision) {
       console.log('');
       return 'cancel';
     }
     await store.switch(target);
     console.log(line(symbols.success, `已切换到 ${styleText('bold', maskEmail(target.email))}`));
-    report(' ', styleText('dim', '请重新启动正在运行的 Codex 会话以使用新账号。'));
+    if (decision === 'restart') {
+      try {
+        await withSpinner('正在重启 Codex server…', () => store.restartCodexServer());
+        report(symbols.success, '已重启 Codex server。');
+      } catch (error) {
+        report(symbols.warning, styleText('yellow', `账号已切换，但 Codex server 重启失败：${describeError(store, error)}`), '请手动重启 Codex。');
+      }
+    } else {
+      report(' ', styleText('dim', '请重新启动正在运行的 Codex 会话以使用新账号。'));
+    }
   }
   return 'done';
 }

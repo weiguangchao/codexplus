@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { timingSafeEqual } from 'node:crypto';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { recordAudit, recordCommitted } from './audit.js';
 import { defaultPort, isRecord, parseAuth, ServiceError, parseCredential, protocolVersion } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from './store.js';
@@ -12,6 +12,7 @@ import type { SaveOptions } from './current-login.js';
 import { BrowserSessions } from './browser-sessions.js';
 import { browserLogin } from './browser-login.js';
 import { findCodexProcesses } from './processes.js';
+import { restartCodexServer } from './restart-codex.js';
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -46,9 +47,9 @@ async function readBody(request: IncomingMessage): Promise<Record<string, unknow
 
 export async function startServer({
   userHome = homedir(), home = join(userHome, '.codexplus'), codexHome = process.env.CODEX_HOME?.trim() || join(userHome, '.codex'),
-  port = defaultPort, sessionToken, accountRequest = fetch, login = browserLogin, findProcesses = findCodexProcesses,
+  port = defaultPort, sessionToken, accountRequest = fetch, login = browserLogin, findProcesses = findCodexProcesses, restartServer = restartCodexServer,
 }: { home?: string; userHome?: string; codexHome?: string; port?: number; sessionToken?: string; accountRequest?: typeof fetch;
-  login?: typeof browserLogin; findProcesses?: typeof findCodexProcesses } = {}): Promise<{
+  login?: typeof browserLogin; findProcesses?: typeof findCodexProcesses; restartServer?: typeof restartCodexServer } = {}): Promise<{
   url: string;
   close(): Promise<void>;
 }> {
@@ -76,7 +77,7 @@ export async function startServer({
     if (request.method === 'GET' && path === '/v1/login/info') return await current.info();
     if (request.method === 'GET' && path === '/v1/login') return { current: await current.current() };
     if (request.method === 'GET' && path === '/v1/login/processes') return { processes: await findProcesses() };
-    if (request.method === 'POST' && ['/v1/login/save', '/v1/login/switch', '/v1/login/refresh-times',
+    if (request.method === 'POST' && ['/v1/login/save', '/v1/login/switch', '/v1/login/refresh-times', '/v1/login/restart-server',
       '/v1/credentials/import', '/v1/credentials/validate', '/v1/login/browser/start', '/v1/login/browser/status',
       '/v1/login/browser/save', '/v1/login/browser/cancel'].includes(path)) {
       try {
@@ -91,6 +92,10 @@ export async function startServer({
         }
         if (path === '/v1/login/save') return await current.saveCurrent(options);
         if (path === '/v1/login/switch') return await current.switch(parseCredential(body));
+        if (path === '/v1/login/restart-server') {
+          await restartServer(dirname(current.authPath));
+          return { ok: true };
+        }
         if (path === '/v1/login/refresh-times') return await current.refreshTimes(parseCredential(body).email);
         if (path === '/v1/credentials/import' || path === '/v1/credentials/validate') {
           if (typeof body.path !== 'string') throw new HttpError(400, '请输入 auth.json 文件路径。');
