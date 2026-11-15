@@ -10,7 +10,7 @@ export const usage = [
   'codexplus status|list [--port 本机端口] [--home 目录]',
   'codexplus switch [邮箱] [--port 本机端口] [--home 目录]',
   '',
-  'status  查看运行模式、登录文件、当前账号及同步状态。',
+  'status  查看数据目录或服务地址、登录文件、当前账号及同步状态。',
   'list    列出已保存账号，标记当前账号。',
   'switch  切换账号；省略邮箱时选择账号，仍保留必要确认。',
   '不带子命令时打开交互式菜单；子命令完成后退出。',

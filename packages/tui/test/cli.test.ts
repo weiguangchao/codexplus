@@ -53,7 +53,7 @@ test('status 和 list 在无 TTY 的真实 CLI 中输出状态和排序列表，
   await login(root, content);
   const status = await run(root, ['status']);
   assert.equal(status.code, 0, status.stderr);
-  assert.match(status.stdout, /运行模式 {2}本地模式/u);
+  assert.doesNotMatch(status.stdout, /运行模式|本地模式/u);
   assert.ok(status.stdout.includes(`数据目录  ${home}`));
   assert.ok(status.stdout.includes(`登录文件  ${join(root, 'codex', 'auth.json')}`));
   assert.match(status.stdout, /当前账号.*a@example.com[\s\S]*已保存.*2 个/u);
@@ -96,7 +96,8 @@ test('独立本机服务端的 status 和 list 支持无 TTY，服务中断时�
   await login(root, auth(second));
   const status = await run(root, ['status', '--port', port]);
   assert.equal(status.code, 0, status.stderr);
-  assert.ok(status.stdout.includes(`运行模式  本地模式\n服务地址  ${server.url}`));
+  assert.doesNotMatch(status.stdout, /运行模式|本地模式/u);
+  assert.ok(status.stdout.startsWith(`服务地址  ${server.url}\n`));
   const list = await run(root, ['list', '--port', port]);
   assert.equal(list.code, 0, list.stderr);
   assert.equal(list.stdout, `${first}  ← 当前\n`);
