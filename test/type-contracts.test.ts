@@ -10,8 +10,8 @@ function diagnostics(source: string) {
   const host = ts.createCompilerHost(parsed.options);
   const readFile = host.readFile.bind(host);
   const fileExists = host.fileExists.bind(host);
-  host.readFile = (path) => path === file ? source : readFile(path);
-  host.fileExists = (path) => path === file || fileExists(path);
+  host.readFile = (path) => resolve(path) === file ? source : readFile(path);
+  host.fileExists = (path) => resolve(path) === file || fileExists(path);
   const program = ts.createProgram([file], parsed.options, host);
   return ts.getPreEmitDiagnostics(program).map((diagnostic) => ({
     code: diagnostic.code, message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
