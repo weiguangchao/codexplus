@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { loginBaselineSchema, readOptional } from '@weiguangchao/codexplus-shared';
+import { loginBaselineSchema, parseLoginInfo, readOptional, requestService } from '@weiguangchao/codexplus-shared';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { startServer } from '@weiguangchao/codexplus-server';
-import { CredentialClient } from '../src/client.js';
+import { CredentialClient, Session } from '../src/client.js';
 import { account } from '../../app-server/test/helpers.js';
 
 export { account, standalone, temporaryHome } from '../../app-server/test/helpers.js';
@@ -35,4 +35,9 @@ export function makeClient({ context, userHome, home = join(userHome, '.codexplu
 
 export async function loginState(home: string): Promise<{ baseline: { email: string; digest: string } | null }> {
   return z.object({ baseline: loginBaselineSchema }).parse(JSON.parse(await readOptional(join(home, 'login.json')) ?? '{"baseline":null}'));
+}
+
+export async function serverSession(url: string): Promise<Session> {
+  const info = parseLoginInfo(await requestService({ url, method: 'login.info' }));
+  return new Session({ url, userHome: info.userHome, codexAuthPath: info.authPath, home: info.home, stop: async () => {} });
 }

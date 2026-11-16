@@ -1,10 +1,10 @@
-import { isRecord, parseServiceHealth, parseAuth, parseEmail, authDigest, requestService, ServiceError } from '@weiguangchao/codexplus-shared';
+import { isRecord, parseServiceHealth, parseAuth, parseEmail, requestService, ServiceError } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { UploadCancelled } from '../src/client.js';
-import { filtered, loginState, makeClient, original, standalone, temporaryHome } from './helpers.js';
+import { filtered, loginState, makeClient, original, temporaryHome } from './helpers.js';
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8'));
@@ -122,10 +122,9 @@ test('识别当前登录：与服务端快照一致、仅邮箱一致且没有�
 
 test('其他客户端更新同一账号后，当前登录状态立即变为服务端有更新版本', async (context) => {
   const userHome = await temporaryHome(context);
-  const server = await standalone({ context, home: join(userHome, '.codexplus') });
   const { client } = makeClient({ context, userHome });
-  const first = await client.connect({ port: Number(new URL(server.url).port), log: () => {} });
-  const second = await client.connect({ port: Number(new URL(server.url).port), log: () => {} });
+  const first = await client.connect({ log: () => {} });
+  const second = await client.connect({ log: () => {} });
   context.after(async () => { await first.close(); await second.close(); });
   const login = JSON.stringify({ tokens: { access_token: 'v1', id_token: idToken('person@example.com') }, last_refresh: '2026-11-01T00:00:00Z' });
   await writeFile(join(userHome, 'v1.json'), login);
@@ -198,42 +197,4 @@ test('确认期间再次上传产生新冲突时再次询问，不使用强制�
   };
   await session.add({ path: source });
   assert.equal(asked, 2);
-});
-
-test('通过本机端口连接独立服务端，关闭客户端不停止服务端，也不记住连接', async (context) => {
-  const userHome = await temporaryHome(context);
-  const home = await temporaryHome(context);
-  const server = await standalone({ context, home });
-  const { client, started } = makeClient({ context, userHome });
-  const session = await client.connect({ port: Number(new URL(server.url).port) });
-  assert.equal(session.url, server.url);
-  await writeFile(join(userHome, 'input.json'), JSON.stringify(original));
-  const { credential } = await session.add({ path: join(userHome, 'input.json') });
-  await session.switch(credential);
-  await session.close();
-  assert.deepEqual(started, []);
-  assert.equal((parseServiceHealth(await requestService({ url: server.url, method: 'health' }))).service, 'codexplus');
-  assert.deepEqual(await readJson(session.codexAuthPath), filtered);
-  assert.deepEqual((await loginState(home)).baseline, { email: credential.email, digest: authDigest(parseAuth(JSON.stringify(filtered))) });
-  const local = await client.connect();
-  assert.notEqual(local.url, server.url);
-  assert.deepEqual(await local.list(), []);
-  assert.equal(started.length, 1);
-  await local.close();
-});
-
-test('显式本机端口离线时报错，不启动空库或改写配置，重启后可重连', async (context) => {
-  const userHome = await temporaryHome(context);
-  const home = await temporaryHome(context);
-  const server = await standalone({ context, home });
-  const port = Number(new URL(server.url).port);
-  const { client, started } = makeClient({ context, userHome });
-  await (await client.connect({ port })).close();
-  const before = await readFile(join(home, 'login.json'), 'utf8').catch(() => null);
-  await server.close();
-  await assert.rejects(client.connect({ port }), /无法连接/u);
-  assert.equal(await readFile(join(home, 'login.json'), 'utf8').catch(() => null), before);
-  assert.deepEqual(started, []);
-  await standalone({ context, home, port });
-  await (await client.connect({ port })).close();
 });

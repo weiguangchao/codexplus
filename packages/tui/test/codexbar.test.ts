@@ -5,7 +5,7 @@ import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { loginState, makeClient, standalone, temporaryHome } from './helpers.js';
+import { loginState, makeClient, serverSession, standalone, temporaryHome } from './helpers.js';
 
 async function fixture({ context, customHome = false }: { context: TestContext; customHome?: boolean | undefined }) {
   const userHome = await temporaryHome(context);
@@ -68,7 +68,7 @@ test('独立本机服务端使用自己的 CodexBar 配置完成同步', async (
   const configPath = join(client.home, '.config', 'codexbar', 'config.json');
   await writeAtomic({ path: configPath, content: '{"version":1,"providers":[{"id":"codex","codexProfileHomePaths":["~/manual"]}]}' });
   const server = await standalone({ context, home: client.home });
-  const session = await client.connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   context.after(() => session.close());
   await session.switch(expectValue(credentials[0]));
   assert.deepEqual(codexBarPaths({ content: await readFile(configPath, 'utf8'), index: 0 }), ['~/manual', paths[1], paths[2]]);

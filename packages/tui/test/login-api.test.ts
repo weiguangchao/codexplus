@@ -1,25 +1,23 @@
 import { parseRpcCall } from '../../shared/test/helpers.js';
 import { parseAuth, parseEmail, writeAtomic } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { startServer } from '@weiguangchao/codexplus-server';
-import { CredentialClient } from '../src/client.js';
 import { confirmRunningCodex, switchCredential } from '../src/switch.js';
-import { account, temporaryHome } from './helpers.js';
+import { account, serverSession, temporaryHome } from './helpers.js';
 
 const email = 'person@example.com';
 const auth = (token: string, last_refresh = '2026-11-01T00:00:00Z') => JSON.stringify({
   tokens: { access_token: token, id_token: `h.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.s` }, last_refresh,
 });
 
-test('TUI 只传操作参数，登录路径、文件导入、状态、进程和切换均由独立服务端管理', async (context) => {
+test('TUI 只传操作参数，登录路径、文件导入、状态、进程和切换均由服务端管理', async (context) => {
   const root = await temporaryHome(context);
   const userHome = join(root, 'server-user');
   const home = join(root, 'server-data');
   const codexHome = join(root, 'server-codex');
-  const clientHome = join(root, 'client-data');
   const clientAuth = join(root, 'client-codex', 'auth.json');
   await writeAtomic({ path: join(codexHome, 'auth.json'), content: auth('server-secret') });
   await writeAtomic({ path: clientAuth, content: auth('client-must-stay') });
@@ -34,8 +32,7 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
     requests.push({ url: String(args[0]), body: String(args[1]?.body ?? ''), response: await response.clone().text() });
     return response;
   });
-  const client = new CredentialClient({ home: clientHome, userHome: join(root, 'client-user'), codexHome: join(root, 'client-codex') });
-  const session = await client.connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   assert.equal(session.codexAuthPath, join(codexHome, 'auth.json'));
   assert.equal(session.userHome, userHome);
   assert.equal(session.home, home);
@@ -51,7 +48,6 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
   await session.switch(credential);
   assert.equal(parseAuth(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'import-secret');
   assert.equal(parseAuth(await readFile(clientAuth, 'utf8')).tokens.access_token, 'client-must-stay');
-  await assert.rejects(stat(clientHome), { code: 'ENOENT' });
   assert.ok(requests.every((request) => request.url.endsWith('/rpc')));
   const methods = requests.map((request) => parseRpcCall(request.body).method);
   assert.ok(methods.includes('login.save'));
@@ -60,26 +56,25 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
   for (const request of requests) assert.doesNotMatch(request.body + request.response, /server-secret|import-secret|client-must-stay|access_token|id_token/u);
 });
 
-test('同步基线和删除记录在客户端换目录及服务端重启后仍生效', async (context) => {
+test('同步基线和删除记录在会话重连及服务端重启后仍生效', async (context) => {
   const root = await temporaryHome(context);
   const options = { home: join(root, 'vault'), userHome: root, codexHome: join(root, 'codex'), port: 0, accountRequest: account };
   let server = await startServer(options);
   context.after(() => server.close());
-  const client = new CredentialClient({ home: join(root, 'first-client') });
-  const first = await client.connect({ port: Number(new URL(server.url).port) });
+  const first = await serverSession(server.url);
   await writeAtomic({ path: first.codexAuthPath, content: auth('first') });
   const { credential } = await first.saveCurrent();
   await writeAtomic({ path: first.codexAuthPath, content: auth('refreshed', '2026-11-10T00:00:00Z') });
   await first.close();
   await server.close();
   server = await startServer(options);
-  const second = await new CredentialClient({ home: join(root, 'second-client') }).connect({ port: Number(new URL(server.url).port) });
+  const second = await serverSession(server.url);
   assert.deepEqual(await second.current(), { status: 'ahead', email });
   await second.list();
   await second.delete(credential);
   await server.close();
   server = await startServer(options);
-  const third = await client.connect({ port: Number(new URL(server.url).port) });
+  const third = await serverSession(server.url);
   assert.deepEqual(await third.current(), { status: 'deleted', email });
   await assert.rejects(third.saveCurrent(), /已取消/u);
   third.confirmRestore = async () => true;
@@ -91,7 +86,7 @@ test('损坏的服务端同步状态会阻止切换，当前登录保持原样',
   const root = await temporaryHome(context);
   const server = await startServer({ home: root, userHome: root, codexHome: join(root, 'codex'), port: 0, accountRequest: account });
   context.after(() => server.close());
-  const session = await new CredentialClient().connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   await writeAtomic({ path: session.codexAuthPath, content: auth('original') });
   const { credential } = await session.saveCurrent();
   const before = await readFile(session.codexAuthPath, 'utf8');
@@ -113,7 +108,7 @@ test('选择切换并重启时由服务端重启对应 CODEX_HOME，普通切换
       if (failRestart) throw new Error('重启失败');
     } });
   context.after(() => server.close());
-  const session = await new CredentialClient({ codexHome: join(root, 'client-codex') }).connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   await writeAtomic({ path: session.codexAuthPath, content: auth('target') });
   const { credential } = await session.saveCurrent();
   const findProcesses = async () => [{ pid: 7654, command: 'codex' }];

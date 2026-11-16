@@ -1,70 +1,20 @@
-import { parseEmail } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { parseCommand } from '../src/options.js';
 
-function parseHome(args: string[]): string {
-  const command = parseCommand(args);
-  assert.ok(command.kind === 'client');
-  return command.home;
-}
-
-test('HOME 默认使用系统用户主目录下的 .codexplus', () => {
-  assert.equal(parseHome([]), join(homedir(), '.codexplus'));
-});
-
-test('--home 支持绝对路径、相对路径、空格路径和 ~/，直接使用指定目录', () => {
-  const absolute = join(homedir(), 'custom home');
-  assert.equal(parseHome(['--home', absolute]), absolute);
-  assert.equal(parseHome(['--home', '.codexplus']), resolve('.codexplus'));
-  assert.equal(parseHome(['--home=./custom home']), resolve('custom home'));
-  assert.equal(parseHome(['--home', '~/custom home']), join(homedir(), 'custom home'));
-  assert.equal(parseHome(['--home', '~']), homedir());
-});
-
-test('后面的 --home 可以覆盖开发命令中预设的目录', () => {
-  assert.equal(parseHome(['--home', '.codexplus', '--home', './other']), resolve('other'));
-});
-
-test('拒绝缺少或为空的 HOME 路径、未知选项和位置参数', () => {
-  for (const args of [['--home'], ['--home='], ['--home', '   '], ['--unknown'], ['add']]) {
-    assert.throws(() => parseHome(args));
+test('不带参数时打开 TUI，--help 和 -h 显示帮助', () => {
+  assert.deepEqual(parseCommand([]), { kind: 'client' });
+  for (const flag of ['--help', '-h']) {
+    assert.deepEqual(parseCommand([flag]), { kind: 'help' });
   }
 });
 
-test('客户端默认自带服务端，--port 仅指定本机端口', () => {
-  const home = join(homedir(), '.codexplus');
-  assert.deepEqual(parseCommand([]), { kind: 'client', home });
-  assert.deepEqual(parseCommand(['--port', '5000']), { kind: 'client', home, port: 5000 });
-  assert.deepEqual(parseCommand(['-h']), { kind: 'help' });
-});
-
-test('status、list 和 switch 接受本机端口和目录，switch 可以指定邮箱', () => {
-  const home = join(homedir(), '.codexplus');
-  for (const kind of ['status', 'list', 'switch']) {
-    assert.deepEqual(parseCommand([kind]), { kind, home });
-    assert.deepEqual(parseCommand([kind, '--home', './data']), { kind, home: resolve('data') });
-    assert.deepEqual(parseCommand([kind, '--port', '47831']), { kind, home, port: 47831 });
-    assert.deepEqual(parseCommand([kind, '--help']), { kind: 'help' });
-  }
-  assert.deepEqual(parseCommand(['switch', 'person@example.com']), { kind: 'switch', home, email: parseEmail('person@example.com') });
-  for (const args of [['status', 'extra'], ['list', 'extra'], ['switch', 'a@example.com', 'b@example.com'], ['switch', ''], ['add']]) {
-    assert.throws(() => parseCommand(args));
-  }
-});
-
-test('serve 已移到 codexplus-server，提示改用新命令', () => {
-  for (const args of [['serve'], ['serve', 'pair'], ['serve', '--port', '8443']]) {
-    assert.throws(() => parseCommand(args), /codexplus-server/u, args.join(' '));
-  }
-});
-
-test('拒绝冲突、无效或不适用于该命令的参数', () => {
+test('拒绝旧子命令、目录和端口参数，以及其他未知参数', () => {
   for (const args of [
-    ['--server', 'https://a.example', '--local'], ['--server', 'https://a.example', '--port', '1'], ['--server', 'http://192.168.1.5'],
-    ['--local'], ['--port', '65536'], ['--port', '1.5'], ['--port', 'abc'], ['--port'], ['--port', '0'], ['--host', '0.0.0.0'], ['--tls-cert', 'c.pem'], ['--limit', '2'], ['add'], ['pair'], ['--home', ''],
+    ['status'], ['list'], ['switch'], ['switch', 'person@example.com'], ['serve'],
+    ['--home', './data'], ['--home=./data'], ['--port', '47831'], ['--port=47831'],
+    ['--server', 'http://127.0.0.1:47831'], ['--local'], ['--version'], ['-v'],
+    ['--help', 'status'], ['status', '-h'], ['--', 'list'],
   ]) {
     assert.throws(() => parseCommand(args), Error, args.join(' '));
   }
