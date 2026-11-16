@@ -411,7 +411,7 @@ export async function menu({ store, version = '' }: { store: Session; version?: 
     try {
       if (action === 'details') {
         const home = maskHomePath({ path: store.home, userHome: store.userHome });
-        const connection = `${store.server === 'local' ? '自带服务端' : '独立服务端'} ${store.url}`;
+        const connection = `自带服务端 ${store.url}`;
         await escapable((context) => select({ config: { message: renderLocations(home, authPath, connection),
           compactMessage: (columns) => locationSummary(home, authPath, connection, columns),
           choices: [{ value: 'back', name: '返回' }], theme: selectTheme('返回') }, context }));
@@ -439,24 +439,4 @@ export async function menu({ store, version = '' }: { store: Session; version?: 
       report({ symbol: symbols.failure, text: styleText('red', describeError({ store, error })) });
     }
   }
-}
-
-export async function switchAccount({ store, email }: { store: Session; email?: string | undefined }): Promise<void> {
-  const credentials = await store.list();
-  if (email !== undefined) {
-    const target = credentials.find((credential) => credential.email === email);
-    if (!target) throw new Error(`未找到已保存的账号：${maskEmail(email)}。`);
-    const current = await store.current();
-    if (current.status === 'saved' && current.email === email) {
-      report({ symbol: symbols.info, text: `${maskEmail(email)} 就是当前登录的账号，无需切换。` });
-      return;
-    }
-    await switchTo({ store, credentials, target });
-    return;
-  }
-  if (credentials.length === 0) {
-    report({ symbol: symbols.info, text: '还没有保存的账号，请先添加。' });
-    return;
-  }
-  await switchFlow({ store, credentials, current: await store.current() });
 }

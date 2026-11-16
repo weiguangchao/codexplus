@@ -30,7 +30,7 @@ npm install --global ./packages/tui
 
 源码全局安装会链接到仓库目录，因此需要保留仓库并在更新后重新运行 `npm run build`；需要独立服务端命令时再运行 `npm install --global ./packages/app-server`。
 
-开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（服务端），两者直接运行源码，都显式传入 `--home .codexplus`，将数据放在项目根目录已忽略的 `.codexplus/` 中。
+开发时使用 `npm run dev`（客户端）和 `npm run dev:server`（独立服务端），两者直接运行源码，将数据放在项目根目录已忽略的 `.codexplus/` 中。客户端开发入口在代码中注入该目录，独立服务端仍通过 `--home .codexplus` 指定；TUI 始终启动自己的服务端。
 
 需要使用日常账号数据运行本地开发版时，在仓库根目录执行：
 
@@ -43,44 +43,39 @@ npm run dev:local
 ## 命令
 
 ```sh
-codexplus [--port 本机端口] [--home 目录]
-codexplus status|list [--port 本机端口] [--home 目录]
-codexplus switch [邮箱] [--port 本机端口] [--home 目录]
+codexplus
+codexplus --help
+codexplus -h
+```
+
+`codexplus` 在交互式终端中打开菜单，查看状态、账号列表和切换账号均通过菜单完成。`--help` 和 `-h` 显示同一份帮助，无需交互式终端，显示后直接退出，不启动服务端。其他参数和子命令均会报错并以非零状态退出，包括旧的 `status`、`list`、`switch`、`serve`、`--home` 和 `--port`。
+
+TUI 自带本机服务端，数据目录固定为 `~/.codexplus`；当前 Codex 登录文件使用 `$CODEX_HOME/auth.json`，未设置时为 `~/.codex/auth.json`。例如：
+
+```sh
+CODEX_HOME=~/my-codex codexplus
+```
+
+独立服务端保留自己的命令和参数，供直接 API 调用，TUI 不连接它：
+
+```sh
 codexplus-server [--port 47831] [--home 目录]
 codexplus-server log [--limit 条数] [--home 目录]
 ```
 
-旧的 `codexplus serve ...` 已改为 `codexplus-server ...`，运行旧命令会报错并提示新命令。独立服务端监听端口默认 `47831`，可用 `--port` 指定。`--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。
+服务端监听端口默认 `47831`，可用 `--port` 指定。服务端的 `--home <目录>` 或 `--home=<目录>` 指定数据目录，默认 `~/.codexplus`，支持绝对路径、相对路径和 `~/`。运行 `codexplus-server --help` 查看帮助。
 
-不带子命令时打开交互式菜单，以下命令执行完成后退出：
-
-| 命令 | 功能 |
-| --- | --- |
-| `codexplus status` | 显示数据目录或服务地址、本机登录文件、当前账号及同步状态、已保存账号数量。 |
-| `codexplus list` | 按邮箱排序列出当前凭证库中的账号，标记当前账号及缺失或损坏的凭证。 |
-| `codexplus switch [邮箱]` | 精确匹配邮箱切换账号；省略邮箱时打开账号选择，切换到与凭证库一致的当前账号时提示无需切换。 |
-
-这三个命令都支持 `--port` 和 `--home`。默认启动自带的本机服务端；指定 `--port` 时只连接 `127.0.0.1` 上已运行的独立服务端。`status` 和 `list` 支持管道和输出重定向，不输出凭证内容；连接失败会报错并以非零状态退出，不会显示为空列表。
-
-TUI、`status`、`list` 和操作提示中的邮箱统一脱敏：账户名保留前后各两位，中间显示 `***`；不足五位时全部隐藏；邮件服务商只保留首字符，其余域名显示为 `***`。例如 `guest66@163.example` 显示为 `gu***66@1***`。数据目录和状态输出的登录路径也会隐藏用户目录名。脱敏仅用于显示，`switch` 参数仍需完整邮箱。
-
-指定邮箱只跳过账号选择，切换仍沿用当前登录保存提醒、版本冲突处理和运行中 Codex 确认。指定账号不存在时以非零状态退出；非交互环境中，只有无需选择或确认的指定账号切换可以执行，需要确认时以非零状态退出，本机登录文件保持不变。
+TUI 和操作提示中的邮箱统一脱敏：账户名保留前后各两位，中间显示 `***`；不足五位时全部隐藏；邮件服务商只保留首字符，其余域名显示为 `***`。例如 `guest66@163.example` 显示为 `gu***66@1***`。位置与连接中的路径也会隐藏用户目录名。
 
 检测到 Codex 进程仍在运行时，按顺序提供「取消，先退出 Codex」「仍然切换」「仍然切换并重启 codex server」，默认取消。最后一项在切换成功后，由服务端使用当前登录文件所属的 `CODEX_HOME` 执行官方命令 `codex app-server daemon restart`，重启 Codex 托管后台服务；独立启动的会话仍需手动重启。需要支持该命令的官方 Codex CLI。重启失败会明确提示账号已切换，并提醒手动重启，不回滚已完成的切换。「更新本机登录」保留原来的取消和继续两项。
-
-```sh
-codexplus status
-codexplus list --port 47831
-codexplus switch person@example.com --home ./data
-```
 
 ## 本机使用
 
 直接运行 `codexplus` 时，每个客户端进程自带服务端，监听 `127.0.0.1` 的随机端口，通过 HTTP 接口访问数据，退出时关闭。自带服务端沿用仅存在内存的本机会话令牌，不保存客户端授权记录。保留客户端、服务端分离的 C/S 架构，客户端与服务端之间的数据通信在本机完成，不需要配对。
 
-通过 `--port <端口>` 连接已运行的独立本机服务端，失败时不自动启动或改写配置；端口不会被记住，下次不带 `--port` 仍启动自带服务端。客户端不接受服务端 URL，服务端不提供监听地址或 TLS 配置。
+TUI 不接受服务端端口或 URL，也不读取旧连接配置；服务端不提供监听地址或 TLS 配置。
 
-服务端首次读取登录信息时，将自身数据目录中旧版 `client.json` 标记为 `local` 的同步基线迁入 `login.json`，并将旧文件改为只含版本号 4，清除旧连接地址、客户端令牌和配对信息。旧远程连接不会被访问，客户端自己的目录不会因连接独立服务端而被读写。`server-access.json` 和 `local-codes/` 不再读取或写入，已有文件可以自行删除。原有 `config.json` 和账户凭证继续使用；旧的 `credentials/codex-<邮箱>.json` 在首次读取或保存时自动迁移到 `credentials/codex-<邮箱>/auth.json`，内容和同步摘要不变。新旧文件同时存在时以新路径为准，并移除旧文件。
+服务端首次读取登录信息时，将自身数据目录中旧版 `client.json` 标记为 `local` 的同步基线迁入 `login.json`，并将旧文件改为只含版本号 4，清除旧连接地址、客户端令牌和配对信息。旧远程连接不会被访问。`server-access.json` 和 `local-codes/` 不再读取或写入，已有文件可以自行删除。原有 `config.json` 和账户凭证继续使用；旧的 `credentials/codex-<邮箱>.json` 在首次读取或保存时自动迁移到 `credentials/codex-<邮箱>/auth.json`，内容和同步摘要不变。新旧文件同时存在时以新路径为准，并移除旧文件。
 
 ## 菜单
 
@@ -103,15 +98,13 @@ codexplus switch person@example.com --home ./data
 
 ## 独立本机服务端
 
-在一个终端中启动服务端，再在同一台电脑的另一个终端连接：
+独立服务端供同一台电脑上的 API 调用方使用：
 
 ```sh
 codexplus-server --port 47831 --home ./data
-codexplus --port 47831
-codexplus status --port 47831
 ```
 
-服务端固定监听 `127.0.0.1`，独立服务端默认端口为 `47831`。连接独立服务端时，凭证库、同步基线和删除记录均由服务端的 `--home` 决定，当前登录文件使用服务端启动时的 `CODEX_HOME`；TUI 的 `--home` 和 `CODEX_HOME` 不会改变它们。TUI 的 `--home` 仅在启动自带服务端时使用。关闭客户端不会关闭独立服务端。
+服务端固定监听 `127.0.0.1`，默认端口为 `47831`。凭证库、同步基线和删除记录由服务端的 `--home` 决定，当前登录文件使用服务端启动时的 `CODEX_HOME`。TUI 始终自带服务端，不连接这个独立进程。
 
 删除账号需要再次确认（默认取消），按列表摘要提交（凭证文件缺失或损坏时提交 null，删除列表会显示说明，仍可确认删除）；服务端已更新时刷新后重新决定。本机 auth.json 不受删除影响。
 
@@ -138,7 +131,7 @@ codexplus status --port 47831
 | 服务端 | 当前登录路径、同步基线和删除记录 | `<home>/login.json` |
 | 服务端 | 当前供 Codex 使用的账户凭证 | 服务端 `$CODEX_HOME/auth.json`，未设置时为 `~/.codex/auth.json` |
 
-`<home>` 是服务端的数据目录，默认 `~/.codexplus`；自带服务端使用 TUI 的 `--home`。文件导入中的相对路径按服务端工作目录解析，`~/` 按服务端用户主目录展开。登录文件由服务端的 `CODEX_HOME` 决定，未设置时使用其操作系统用户的 `~/.codex/auth.json`，不会被 `--home` 改变。进程检测、浏览器登录和 CodexBar 同步均由服务端执行。
+`<home>` 是服务端的数据目录：正式 TUI 固定使用 `~/.codexplus`，独立服务端可通过 `--home` 指定。文件导入中的相对路径按服务端工作目录解析，`~/` 按服务端用户主目录展开。登录文件由服务端的 `CODEX_HOME` 决定，未设置时使用其操作系统用户的 `~/.codex/auth.json`，不会被 `--home` 改变。进程检测、浏览器登录和 CodexBar 同步均由服务端执行。
 
 ### CodexBar 联动
 
@@ -171,7 +164,7 @@ codexplus status --port 47831
 
 浏览器登录由服务端调用官方 Codex CLI 完成；codexplus 不自行刷新 token，过期后可以再次浏览器登录，或在 Codex 中重新登录后保存。凭证库保存添加时的快照，Codex 后续刷新当前登录的 token 不会自动同步到凭证库。
 
-服务端读取、保存当前登录和切换写入均使用服务端的 `$CODEX_HOME/auth.json`；`CODEX_HOME` 未设置或为空时使用其 `~/.codex/auth.json`。目录支持相对路径和 `~/`，界面显示实际登录文件路径，`--home` 仍仅控制 codexplus 数据目录。Codex 需要使用文件凭证存储；如果当前配置使用系统钥匙串，需要自行设置实际 Codex 目录内的 `config.toml`：
+服务端读取、保存当前登录和切换写入均使用服务端的 `$CODEX_HOME/auth.json`；`CODEX_HOME` 未设置或为空时使用其 `~/.codex/auth.json`。目录支持相对路径和 `~/`，界面显示实际登录文件路径，独立服务端的 `--home` 仅控制 codexplus 数据目录。Codex 需要使用文件凭证存储；如果当前配置使用系统钥匙串，需要自行设置实际 Codex 目录内的 `config.toml`：
 
 ```toml
 cli_auth_credentials_store = "file"
@@ -242,7 +235,7 @@ git push origin v0.1.1
 
 标签应指向已包含发布工作流的提交，并使用尚未使用的版本。版本直接取自标签，工作流临时更新根包、三个工作区包、内部依赖及 lockfile，不提交这些版本变更。下次发布只需推送新的标签，例如 `v0.1.2`。其他版本系列和预发布标签不会发布；匹配 `v0.1.*` 但格式非法的标签会在版本校验时失败。
 
-工作流复用 Linux、macOS、Windows 上 Node.js 22、24 的完整检查和安装验证，全部通过后按 shared → app-server → tui 的顺序公开发布到 npm 的 `latest` 标签。安装验证将三个 tarball 安装到临时全局目录，在仓库外启动两个 CLI，并使用隔离的 Codex 目录运行 `codexplus status`。
+工作流复用 Linux、macOS、Windows 上 Node.js 22、24 的完整检查和安装验证，全部通过后按 shared → app-server → tui 的顺序公开发布到 npm 的 `latest` 标签。安装验证将三个 tarball 安装到临时全局目录，在仓库外启动两个 CLI，并验证 TUI 的两个帮助选项、旧命令拒绝及非交互启动行为，不创建账号数据。
 
 首次发布前，使用 npm 用户 `weiguangchao` 的个人 scope，无需创建组织。在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置 `NPM_TOKEN`，Token 的包和 scope 权限需允许向 `@weiguangchao` 创建和发布这三个包，并启用 Bypass 2FA；未配置可信发布时，每次发布都需要有效的 token。不要把 token 写入仓库。
 
@@ -262,4 +255,4 @@ npm run test:package
 
 可运行 `npm run release:prepare -- v0.1.1` 在本机验证版本同步；此命令会修改根包、工作区包及 lockfile，正式发布由工作流在临时检出目录内完成。
 
-测试使用独立临时主目录、真实本机 HTTP 服务和模拟账号查询接口，覆盖字段过滤、原有凭证兼容、存储回滚、自带本地服务端、独立本机端口、版本检查、旧客户端配置迁移、拒绝远程入口、日志离线读取、并发上传、服务端重启、请求限制、条件删除、操作记录与裁剪、服务端登录文件写入、TUI 请求和响应不含凭证、浏览器登录取消与重试和 Unix 文件权限，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行检查。
+测试使用独立临时主目录、真实本机 HTTP 服务和模拟账号查询接口，覆盖字段过滤、原有凭证兼容、存储回滚、自带本地服务端、TUI 入口限制、版本检查、旧客户端配置迁移、拒绝远程入口、日志离线读取、并发上传、服务端重启、请求限制、条件删除、操作记录与裁剪、服务端登录文件写入、TUI 请求和响应不含凭证、浏览器登录取消与重试和 Unix 文件权限，不读取本机真实凭证。CI 在 Linux、macOS 和 Windows 上使用 Node.js 22、24 执行检查。

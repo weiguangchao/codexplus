@@ -6,8 +6,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CredentialStore, readAudit, startServer } from '@weiguangchao/codexplus-server';
-import { CredentialClient, Session } from '../src/client.js';
-import { temporaryHome } from './helpers.js';
+import { Session } from '../src/client.js';
+import { serverSession, temporaryHome } from './helpers.js';
 
 const alice = { type: 'codex' as const, email: parseEmail('alice@example.com') };
 const bob = { type: 'codex' as const, email: parseEmail('bobby@example.com') };
@@ -49,8 +49,7 @@ test('真实 C/S 流程按所选账号查询并使用指定卡片，不切换登
     wire.push(String(args[1]?.body ?? '') + await response.clone().text());
     return response;
   });
-  const client = new CredentialClient({ home: join(root, 'unused-client'), userHome: root, codexHome });
-  const session = await client.connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   assert.equal((await session.resetCards(alice))[0]?.id, `${alice.email}-card`);
   const cards = await session.resetCards(bob);
   assert.equal(upstream.length, 2);

@@ -30,28 +30,29 @@ test('服务名或协议版本不匹配时只做健康检查，旧远程令牌�
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}`;
-  const client = new CredentialClient({ userHome });
+  let closed = 0;
+  const client = new CredentialClient({ userHome, startLocal: async () => ({ url, close: async () => { closed++; } }) });
   await mkdir(client.home);
   await writeFile(join(client.home, 'client.json'), JSON.stringify({ version: 2, current: url, servers: { [url]: { token: 'a'.repeat(43), clientId: 'old', serverId: 'old' } }, baseline: null }));
   const before = await readFile(join(client.home, 'client.json'), 'utf8');
-  const options = { port: address.port };
-  await assert.rejects(client.connect(options), /不是 codexplus/u);
+  await assert.rejects(client.connect(), /不是 codexplus/u);
   health = { service: 'codexplus', version: 1, id: 'new' };
-  await assert.rejects(client.connect(options), /版本不兼容/u);
+  await assert.rejects(client.connect(), /版本不兼容/u);
   health.version = 2;
-  await assert.rejects(client.connect(options), /版本不兼容/u);
+  await assert.rejects(client.connect(), /版本不兼容/u);
   assert.equal(await readFile(join(client.home, 'client.json'), 'utf8'), before);
   health.version = protocolVersion;
-  const session = await client.connect(options);
+  const session = await client.connect();
   await session.close();
   assert.deepEqual(methods, [...Array.from({ length: 4 }, () => 'health'), 'login.info']);
   assert.equal(await readFile(join(client.home, 'client.json'), 'utf8'), before);
-  assert.deepEqual(tokens, []);
+  assert.equal(tokens.length, 1);
+  assert.notEqual(tokens[0], `Bearer ${'a'.repeat(43)}`);
+  assert.equal(closed, 4);
 });
 
 test('本机服务端的重定向不会被跟随，也不改写客户端配置', async (context) => {
   const userHome = await temporaryHome(context);
-  const client = new CredentialClient({ userHome });
   const paths: string[] = [];
   const server = createServer((request, response) => {
     paths.push(request.url ?? '');
@@ -62,7 +63,10 @@ test('本机服务端的重定向不会被跟随，也不改写客户端配置',
   context.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
-  await assert.rejects(client.connect({ port: address.port }), /无法连接/u);
+  let closed = false;
+  const client = new CredentialClient({ userHome, startLocal: async () => ({ url: `http://127.0.0.1:${address.port}`, close: async () => { closed = true; } }) });
+  await assert.rejects(client.connect(), /无法连接/u);
+  assert.equal(closed, true);
   assert.deepEqual(paths, ['/rpc']);
   await assert.rejects(readFile(join(client.home, 'client.json')), { code: 'ENOENT' });
   await assert.rejects(requestService({ url: `http://127.0.0.1:${address.port}`, method: 'credentials.upload', params: { auth: { tokens: { access_token: 'secret' } }, base: null } }), /无法连接/u);

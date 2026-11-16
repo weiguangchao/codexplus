@@ -13,7 +13,7 @@
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "dev": "tsx --conditions=source packages/tui/src/cli.ts --home .codexplus",
+    "dev": "tsx --conditions=source scripts/dev.ts",
     "dev:local": "tsx --conditions=source packages/tui/src/cli.ts",
     "dev:server": "tsx --conditions=source packages/app-server/src/cli.ts --home .codexplus",
     "build": "tsc -b tsconfig.build.json",

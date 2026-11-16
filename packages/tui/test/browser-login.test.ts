@@ -5,8 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { startServer } from '@weiguangchao/codexplus-server';
-import { CredentialClient } from '../src/client.js';
-import { loginState, temporaryHome } from './helpers.js';
+import { loginState, serverSession, temporaryHome } from './helpers.js';
 
 test('浏览器凭证保留在服务端，TUI 使用登录标识保存、确认冲突和重试', async (context) => {
   const root = await temporaryHome(context);
@@ -20,7 +19,7 @@ test('浏览器凭证保留在服务端，TUI 使用登录标识保存、确认�
     },
   });
   context.after(() => server.close());
-  const session = await new CredentialClient().connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   await writeAtomic({ path: join(root, 'source.json'), content: '{"tokens":{"access_token":"original-secret"}}' });
   const { credential } = await session.add({ path: join(root, 'source.json') });
   await session.switch(credential);
@@ -69,7 +68,7 @@ test('TUI 取消浏览器等待时通知服务端清理，可立即重新登录�
   });
   let closed = false;
   context.after(async () => { if (!closed) await server.close(); });
-  const session = await new CredentialClient().connect({ port: Number(new URL(server.url).port) });
+  const session = await serverSession(server.url);
   const controller = new AbortController();
   await assert.rejects(session.browserLogin({ signal: controller.signal, onUrl: () => controller.abort(new Error('cancelled')), onBrowserError: () => {} }), /aborted|cancelled/u);
   assert.equal(cancelled, 1);

@@ -15,7 +15,6 @@ import {
   parseResetCard,
   parseResetCardOutcome,
   requestService,
-  parsePort,
   protocolVersion,
   ServiceError,
 } from '@weiguangchao/codexplus-shared';
@@ -27,7 +26,6 @@ import { setTimeout } from 'node:timers/promises';
 import { startServer } from '@weiguangchao/codexplus-server';
 
 export interface ConnectOptions {
-  port?: number;
   log?: (message: string) => void;
 }
 
@@ -48,16 +46,14 @@ export class Session {
   readonly codexAuthPath: string;
   private readonly stop: () => Promise<void>;
   readonly home: string;
-  readonly server: string;
   private readonly log: (message: string) => void;
   private readonly sessionToken: string | undefined;
-  constructor({ url, userHome, codexAuthPath, stop, home = userHome, server = url, log = writeOutput, sessionToken }: {
+  constructor({ url, userHome, codexAuthPath, stop, home = userHome, log = writeOutput, sessionToken }: {
     url: string;
     userHome: string;
     codexAuthPath: string;
     stop: () => Promise<void>;
     home?: string | undefined;
-    server?: string | undefined;
     log?: ((message: string) => void) | undefined;
     sessionToken?: string | undefined;
   }) {
@@ -66,7 +62,6 @@ export class Session {
     this.codexAuthPath = codexAuthPath;
     this.stop = stop;
     this.home = home;
-    this.server = server;
     this.log = log;
     this.sessionToken = sessionToken;
   }
@@ -208,20 +203,19 @@ export class CredentialClient {
     this.startLocal = startLocal;
   }
 
-  async connect({ port, log = writeOutput }: ConnectOptions = {}): Promise<Session> {
-    if (port !== undefined) parsePort(String(port));
-    const sessionToken = port === undefined ? randomBytes(32).toString('base64url') : undefined;
-    const embedded = sessionToken === undefined ? null : await this.startLocal({ home: this.home, userHome: this.userHome,
+  async connect({ log = writeOutput }: ConnectOptions = {}): Promise<Session> {
+    const sessionToken = randomBytes(32).toString('base64url');
+    const embedded = await this.startLocal({ home: this.home, userHome: this.userHome,
       ...(this.codexHome === undefined ? {} : { codexHome: this.codexHome }), port: 0, sessionToken });
-    const url = embedded?.url ?? `http://127.0.0.1:${port}`;
+    const url = embedded.url;
     try {
       const health = await requestService({ url, method: 'health' });
       if (!isRecord(health) || health.service !== 'codexplus') throw new Error(`${url} 上运行的不是 codexplus 服务端。`);
       if (health.version !== protocolVersion) throw new Error('版本不兼容，请把两端升级到同一版本。');
       const info = parseLoginInfo(await requestService({ url, method: 'login.info', params: undefined, sessionToken }));
-      return new Session({ url, userHome: info.userHome, codexAuthPath: info.authPath, stop: async () => { await embedded?.close(); }, home: info.home, server: embedded ? 'local' : url, log, sessionToken });
+      return new Session({ url, userHome: info.userHome, codexAuthPath: info.authPath, stop: async () => { await embedded.close(); }, home: info.home, log, sessionToken });
     } catch (error) {
-      await embedded?.close();
+      await embedded.close();
       throw error;
     }
   }

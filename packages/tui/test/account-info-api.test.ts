@@ -44,7 +44,7 @@ test('真实 C/S 查询当前登录而非已保存账号，刷新重新读凭证
     wire.push(await response.clone().text());
     return response;
   });
-  const session = new Session({ url: server.url, userHome: root, codexAuthPath: authPath, stop: async () => {}, home, server: server.url, log: () => {}, sessionToken: 'local-session' });
+  const session = new Session({ url: server.url, userHome: root, codexAuthPath: authPath, stop: async () => {}, home, log: () => {}, sessionToken: 'local-session' });
   const first = await session.accountInfo();
   assert.equal(first.email, 'current@example.com');
   assert.equal(first.fiveHour?.remainingPercent, 68);
