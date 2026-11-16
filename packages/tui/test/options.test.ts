@@ -1,3 +1,4 @@
+import { parseEmail } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -48,7 +49,7 @@ test('status、list 和 switch 接受本机端口和目录，switch 可以指定
     assert.deepEqual(parseCommand([kind, '--port', '47831']), { kind, home, port: 47831 });
     assert.deepEqual(parseCommand([kind, '--help']), { kind: 'help' });
   }
-  assert.deepEqual(parseCommand(['switch', 'person@example.com']), { kind: 'switch', home, email: 'person@example.com' });
+  assert.deepEqual(parseCommand(['switch', 'person@example.com']), { kind: 'switch', home, email: parseEmail('person@example.com') });
   for (const args of [['status', 'extra'], ['list', 'extra'], ['switch', 'a@example.com', 'b@example.com'], ['switch', ''], ['add']]) {
     assert.throws(() => parseCommand(args));
   }

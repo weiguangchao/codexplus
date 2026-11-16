@@ -1,58 +1,57 @@
-import { authDigest, parseAuth, credentialDirectory, isRecord } from './auth.js';
+import { z } from 'zod';
+import { authDigest, isRecord } from './auth.js';
+import type { Auth } from './auth.js';
+import type { Email } from './identity.js';
+import type { UploadConflict } from './session.js';
 import { randomUUID } from 'node:crypto';
 
 export const defaultPort = 47831;
 export const protocolVersion = 5;
 export const rpcPath = '/rpc';
 
-export type RpcId = string | number | null;
+const rpcIdSchema = z.union([z.string(), z.number().finite(), z.null()]);
+export const rpcRequestSchema = z.object({ jsonrpc: z.literal('2.0'), method: z.string(),
+  params: z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).optional(), id: rpcIdSchema.optional() });
+const rpcResponseSchema = z.union([
+  z.object({ jsonrpc: z.literal('2.0'), id: rpcIdSchema, result: z.unknown() }).refine((value) => Object.hasOwn(value, 'result')),
+  z.object({ jsonrpc: z.literal('2.0'), id: rpcIdSchema,
+    error: z.object({ code: z.number().int(), message: z.string(), data: z.unknown().optional() }) }),
+]);
 
-export interface RpcRequest {
-  jsonrpc: '2.0';
-  method: string;
-  params?: object;
-  id?: RpcId;
+export type RpcId = z.infer<typeof rpcIdSchema>;
+export type RpcRequest = z.infer<typeof rpcRequestSchema>;
+export type RpcResponse = z.infer<typeof rpcResponseSchema>;
+
+export function parseRpcResponse(value: unknown): RpcResponse {
+  if (!isRecord(value) || Object.hasOwn(value, 'result') === Object.hasOwn(value, 'error')) {
+    throw new Error('服务端未返回有效的 JSON-RPC 响应。');
+  }
+  const result = rpcResponseSchema.safeParse(value);
+  if (!result.success) throw new Error('服务端未返回有效的 JSON-RPC 响应。');
+  return result.data;
 }
-
-export type RpcResponse =
-  | { jsonrpc: '2.0'; id: RpcId; result: unknown }
-  | { jsonrpc: '2.0'; id: RpcId; error: { code: number; message: string; data?: unknown } };
-
-export interface Credential {
-  type: 'codex';
-  email: string;
-}
-
-export interface UploadResult {
-  credential: Credential;
-  changed: boolean;
-}
-
-export type CurrentLogin =
-  | { status: 'none' }
-  | { status: 'invalid'; reason: string }
-  | { status: 'saved'; email: string }
-  | { status: 'ahead'; email: string }
-  | { status: 'behind'; email: string }
-  | { status: 'diverged'; email: string }
-  | { status: 'deleted'; email: string }
-  | { status: 'unsaved'; email: string | null };
 
 export class ServiceError extends Error {
-  constructor(readonly status: number, message: string, readonly details: Record<string, unknown> = {}, readonly rpcCode?: number) {
+  readonly status: number;
+  readonly details: unknown;
+  readonly rpcCode: number | undefined;
+  constructor({ status, message, details = {}, rpcCode }: { status: number; message: string; details?: unknown | undefined; rpcCode?: number | undefined }) {
     super(message);
+    this.status = status;
+    this.details = details;
+    this.rpcCode = rpcCode;
   }
 }
 
-export function parseCredential(value: unknown): Credential {
-  if (!isRecord(value) || value.type !== 'codex' || typeof value.email !== 'string') {
-    throw new Error('凭证信息格式无效。');
+export class UploadConflictError extends ServiceError {
+  readonly details: UploadConflict;
+  constructor(details: UploadConflict) {
+    super({ status: 409, message: '服务端凭证与本次上传不同，请确认是否覆盖。', details });
+    this.details = details;
   }
-  credentialDirectory(value.email);
-  return { type: 'codex', email: value.email };
 }
 
-export async function requestService(url: string, method: string, params?: object, sessionToken?: string, timeoutMs = 20_000): Promise<unknown> {
+export async function requestService({ url, method, params, sessionToken, timeoutMs = 20_000 }: { url: string; method: string; params?: RpcRequest['params']; sessionToken?: string | undefined; timeoutMs?: number | undefined }): Promise<unknown> {
   const address = new URL(url);
   if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || address.username || address.password || address.search || address.hash || address.pathname !== '/') {
     throw new Error('仅支持连接 127.0.0.1 上的本机服务端。');
@@ -79,27 +78,27 @@ export async function requestService(url: string, method: string, params?: objec
   try {
     result = await response.json();
   } catch {
-    throw new ServiceError(response.status, '服务端未返回有效的 JSON 数据。');
+    throw new ServiceError({ status: response.status, message: '服务端未返回有效的 JSON 数据。' });
   }
-  if (!isRecord(result) || result.jsonrpc !== '2.0' || (result.id !== id && (response.ok || result.id !== null)) ||
-    Object.hasOwn(result, 'result') === Object.hasOwn(result, 'error')) {
-    throw new ServiceError(response.ok ? 502 : response.status, '服务端未返回有效的 JSON-RPC 响应。');
+  let parsed: RpcResponse;
+  try { parsed = parseRpcResponse(result); } catch {
+    throw new ServiceError({ status: response.ok ? 502 : response.status, message: '服务端未返回有效的 JSON-RPC 响应。' });
   }
-  if (Object.hasOwn(result, 'error')) {
-    const error = result.error;
-    if (!isRecord(error) || !Number.isInteger(error.code) || typeof error.message !== 'string') {
-      throw new ServiceError(response.ok ? 502 : response.status, '服务端未返回有效的 JSON-RPC 错误。');
-    }
+  if (parsed.id !== id && (response.ok || parsed.id !== null)) {
+    throw new ServiceError({ status: response.ok ? 502 : response.status, message: '服务端未返回有效的 JSON-RPC 响应。' });
+  }
+  if ('error' in parsed) {
+    const { error } = parsed;
     const data = isRecord(error.data) ? error.data : {};
     const status = typeof data.status === 'number' && Number.isInteger(data.status) && data.status >= 400 && data.status <= 599 ?
-      data.status : error.code === -32601 ? 404 : [-32700, -32600, -32602].includes(Number(error.code)) ? 400 : 500;
-    throw new ServiceError(response.ok ? status : response.status, error.message, data, Number(error.code));
+      data.status : error.code === -32601 ? 404 : [-32700, -32600, -32602].includes(error.code) ? 400 : 500;
+    throw new ServiceError({ status: response.ok ? status : response.status, message: error.message, details: data, rpcCode: error.code });
   }
-  if (!response.ok) throw new ServiceError(response.status, `服务端请求失败（HTTP ${response.status}）。`);
-  return result.result;
+  if (!response.ok) throw new ServiceError({ status: response.status, message: `服务端请求失败（HTTP ${response.status}）。` });
+  return parsed.result;
 }
 
-export function conflict(email: string, content: string | null): ServiceError {
-  const auth = content === null ? null : parseAuth(content);
-  return new ServiceError(409, '服务端凭证与本次上传不同，请确认是否覆盖。', { code: 'conflict', email, digest: content === null ? null : authDigest(content), lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null });
+export function conflict({ email, auth }: { email: Email; auth: Auth | null }): UploadConflictError {
+  return new UploadConflictError({ code: 'conflict', email, digest: auth === null ? null : authDigest(auth),
+    lastRefresh: typeof auth?.last_refresh === 'string' ? auth.last_refresh : null, localRefresh: null });
 }

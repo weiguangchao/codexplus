@@ -1,3 +1,6 @@
+import type { Choice } from '../src/select-layout.js';
+import { expectValue } from '../../shared/test/helpers.js';
+import { parseEmail } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
@@ -12,15 +15,15 @@ import { displayWidth, mainChoices, switchChoices } from '../src/ui.js';
 import { clipHeader } from '../src/select-budget.js';
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-const alice = { type: 'codex' as const, email: 'alice@example.com' };
-const bob = { type: 'codex' as const, email: 'bobby@icloud.com' };
+const alice = { type: 'codex' as const, email: parseEmail('alice@example.com') };
+const bob = { type: 'codex' as const, email: parseEmail('bobby@icloud.com') };
 
-function harness<T>(config: Parameters<typeof select<T>>[0]) {
+function harness<T>(config: Parameters<typeof select<T>>[0]['config']) {
   const input = new PassThrough();
   const output = new PassThrough();
   let screen = '';
   output.on('data', (chunk) => { screen += String(chunk); });
-  const answer = select(config, { input, output, clearPromptOnDone: true });
+  const answer = select({ config, context: { input, output, clearPromptOnDone: true } });
   return { answer, screen: () => stripVTControlCharacters(screen), async key(value: string) { input.write(value); await tick(); } };
 }
 
@@ -28,7 +31,7 @@ test('首页在标准与窄终端内保留账号状态、当前焦点和返回�
   for (const columns of [24, 32, 40, 80, 120]) for (const rows of [8, 9, 10, 12, 15, 16, 24, 40]) {
     for (const status of ['saved', 'ahead', 'behind', 'diverged', 'deleted', 'unsaved'] as const) {
       const current = { status, email: alice.email };
-      const menu = mainChoices([alice, bob], current);
+      const menu = mainChoices({ credentials: [alice, bob], current });
       const active = menu.choices.findIndex((item) => !Separator.isSeparator(item) && item.value === menu.default);
       const text = stripVTControlCharacters(renderSelect({ message: renderHome(current, 2, '0.1.0', columns), compactMessage: homeSummary(current, 2), choices: menu.choices,
         theme: { escapeLabel: '退出' } }, { active, query: '', error: '' }, columns, rows));
@@ -59,7 +62,7 @@ test('快捷键只移动焦点，Enter 才提交；禁用选项不能提交', as
 });
 
 test('账号筛选保持完整操作值，支持无结果、退格、清空和返回', async () => {
-  const menu = switchChoices([alice, bob], { status: 'saved', email: alice.email });
+  const menu = switchChoices({ credentials: [alice, bob], current: { status: 'saved', email: alice.email } });
   const prompt = harness({ message: '切换账号', choices: menu.choices, default: menu.default, searchable: true });
   await prompt.key('xyz');
   assert.match(prompt.screen(), /无匹配账号/u);
@@ -92,7 +95,7 @@ test('中止会清理选择器的终端 resize 监听', async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   output.resume();
-  const answer = select({ message: '确认', choices: [{ value: false, name: '取消' }] }, { input, output, signal: controller.signal });
+  const answer = select({ config: { message: '确认', choices: [{ value: false, name: '取消' }] }, context: { input, output, signal: controller.signal } });
   await tick();
   controller.abort();
   await assert.rejects(answer, { name: 'AbortPromptError' });
@@ -144,7 +147,7 @@ test('详情内 Esc 返回选项，随后 Esc 才通过 escapable 返回上一�
   const output = new PassThrough();
   output.resume();
   let settled = false;
-  const answer = escapable((config) => select({ message: '完整说明', choices: [{ value: false, name: '取消' }] }, { ...config, input, output }));
+  const answer = escapable((config) => select({ config: { message: '完整说明', choices: [{ value: false, name: '取消' }] }, context: { ...config, input, output } }));
   void answer.then(() => { settled = true; });
   await tick();
   input.write('?');
@@ -159,7 +162,7 @@ test('详情内 Esc 返回选项，随后 Esc 才通过 escapable 返回上一�
 });
 
 test('分页不留下孤立的分组标题，账号计数不含分隔符和返回', () => {
-  const choices = [...Array.from({ length: 14 }, (_, value) => ({ value: value as number | null, name: `账号 ${value + 1}` })),
+  const choices: (Choice<number | null> | Separator)[] = [...Array.from({ length: 14 }, (_, value) => ({ value, name: `账号 ${value + 1}` })),
     new Separator('操作'), { value: null, name: '返回' }];
   const config = { message: '选择账号', choices, searchable: true };
   for (const rows of [10, 12, 15, 16, 24]) for (let active = 0; active < choices.length; active++) {
@@ -193,7 +196,7 @@ test('长说明、短说明和返回不会改变页面划分，连续前后翻�
     Object.defineProperty(process.stdout, key, { value, configurable: true });
     context.after(() => { if (descriptor) Object.defineProperty(process.stdout, key, descriptor); else Reflect.deleteProperty(process.stdout, key); });
   }
-  const choices = [...Array.from({ length: 14 }, (_, value) => ({ value: value as number | null, name: `重置卡 ${value + 1}`,
+  const choices: (Choice<number | null> | Separator)[] = [...Array.from({ length: 14 }, (_, value) => ({ value, name: `重置卡 ${value + 1}`,
     description: '卡片说明：用于重置 Codex 的五小时和每周用量，获得与到期时间会在确认前显示。' })), { value: null, name: '返回', description: '重新选择账号' }];
   const config = { message: 'codexplus / 使用重置卡\n选择一张卡', choices, pageSize: 10 };
   const pages = selectLayout(config, { active: 0, query: '', error: '' }, 40, 16).pages;
@@ -221,7 +224,7 @@ test('短确认页优先显示全部选择，裁剪按段落处理并且不重�
     for (const name of ['覆盖账号库', '覆盖本机', '返回']) assert.ok(text.includes(name), text);
     assert.equal(new Set(layout.header).size, layout.header.length);
     for (let index = 0; index < layout.header.length; index++) {
-      if (layout.header[index]!.endsWith('刷新时间：')) assert.match(layout.header[index + 1] ?? '', /2026-11-\d{2}T08:00:00Z/u);
+      if (expectValue(layout.header[index]).endsWith('刷新时间：')) assert.match(layout.header[index + 1] ?? '', /2026-11-\d{2}T08:00:00Z/u);
     }
   }
   assert.deepEqual(clipHeader('首段\n第二段\n最后一句很长的警告', 12, 2), ['首段', '最后一句很…']);
@@ -230,7 +233,7 @@ test('短确认页优先显示全部选择，裁剪按段落处理并且不重�
 test('未登录和无效文件的紧凑首页只显示一次状态', () => {
   for (const current of [{ status: 'none' }, { status: 'invalid', reason: '无法解析文件' }] as const) {
     for (const columns of [24, 40, 80]) for (const rows of [8, 10, 12, 15]) {
-      const menu = mainChoices([], current);
+      const menu = mainChoices({ credentials: [], current });
       const text = stripVTControlCharacters(renderSelect({ message: renderHome(current, 0, '0.1.0', columns), compactMessage: homeSummary(current, 0),
         choices: menu.choices }, { active: 1, query: '', error: '' }, columns, rows));
       const status = current.status === 'none' ? '未登录' : '登录文件无效';
@@ -259,7 +262,7 @@ test('说明截断不会把悬挂缩进拼进正文，省略号前不留空格',
   for (const description of ['这张卡可以立即重置当前五小时窗口和每周用量。'.repeat(20), 'The Codex server will restart. '.repeat(20)]) {
     const config = { message: '使用重置卡', choices: [{ value: 'card', name: '重置卡', description }, { value: null, name: '返回' }] };
     const layout = selectLayout(config, { active: 0, query: '', error: '' }, 40, 12);
-    const last = layout.detailLines.at(-1)!;
+    const last = expectValue(layout.detailLines.at(-1));
     assert.ok(last.startsWith('  '));
     assert.ok(last.endsWith('…'));
     assert.doesNotMatch(last.slice(2), / {2}|\s…/u);

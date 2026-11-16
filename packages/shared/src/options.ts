@@ -19,7 +19,7 @@ export function resolveHome(value: string | undefined): string {
   return home === '~' ? homedir() : home.startsWith('~/') ? resolve(homedir(), home.slice(2)) : resolve(home);
 }
 
-export function parseOptions<T extends ParseArgsOptionsConfig>(program: string, args: string[], options: T) {
+export function parseOptions<T extends ParseArgsOptionsConfig>({ program, args, options }: { program: string; args: string[]; options: T }) {
   for (const arg of args) {
     if (arg === '--') break;
     const name = arg.startsWith('--') ? arg.slice(2).split('=')[0] : undefined;

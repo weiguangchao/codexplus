@@ -6,10 +6,10 @@ import { expandPath } from '../src/files.js';
 
 test('路径支持去掉外层引号和反斜杠转义的空格', () => {
   const home = join(tmpdir(), 'home');
-  assert.equal(expandPath(home, "'~/a b.json'"), join(home, 'a b.json'));
-  assert.equal(expandPath(home, ' "~/a b.json" '), join(home, 'a b.json'));
-  assert.equal(expandPath(home, '~'), home);
+  assert.equal(expandPath({ home, path: "'~/a b.json'" }), join(home, 'a b.json'));
+  assert.equal(expandPath({ home, path: ' "~/a b.json" ' }), join(home, 'a b.json'));
+  assert.equal(expandPath({ home, path: '~' }), home);
   if (process.platform !== 'win32') {
-    assert.equal(expandPath(home, '~/a\\ b.json'), join(home, 'a b.json'));
+    assert.equal(expandPath({ home, path: '~/a\\ b.json' }), join(home, 'a b.json'));
   }
 });

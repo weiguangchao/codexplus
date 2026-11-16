@@ -1,10 +1,10 @@
 import { isRecord, parseResetCard, parseResetCardOutcome } from '@weiguangchao/codexplus-shared';
-import type { AuthTokens, ResetCard, ResetCardOutcome } from '@weiguangchao/codexplus-shared';
+import type { AuthTokens, ResetCard, ResetCardId, ResetCardOutcome, ResetRequestId } from '@weiguangchao/codexplus-shared';
 
 const endpoint = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
 const uncertain = '重置卡使用结果未能确认，请先查看该账号的用量和重置卡状态，勿直接改用另一张卡。';
 
-async function requestCards(tokens: AuthTokens, request: typeof fetch, body?: { credit_id: string; redeem_request_id: string }): Promise<unknown> {
+async function requestCards({ tokens, request, body }: { tokens: AuthTokens; request: typeof fetch; body?: { credit_id: ResetCardId; redeem_request_id: ResetRequestId } | undefined }): Promise<unknown> {
   const headers: Record<string, string> = { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' };
   if (typeof tokens.account_id === 'string' && tokens.account_id) headers['ChatGPT-Account-Id'] = tokens.account_id;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -31,8 +31,8 @@ async function requestCards(tokens: AuthTokens, request: typeof fetch, body?: { 
   }
 }
 
-export async function listResetCards(tokens: AuthTokens, request: typeof fetch = fetch): Promise<ResetCard[]> {
-  const result = await requestCards(tokens, request);
+export async function listResetCards({ tokens, request = fetch }: { tokens: AuthTokens; request?: typeof fetch | undefined }): Promise<ResetCard[]> {
+  const result = await requestCards({ tokens, request });
   if (!isRecord(result) || !Array.isArray(result.credits)) throw new Error('ChatGPT 重置卡列表格式无效。');
   const cards: ResetCard[] = [];
   for (const value of result.credits) {
@@ -46,8 +46,8 @@ export async function listResetCards(tokens: AuthTokens, request: typeof fetch =
     (b.expiresAt === null ? Infinity : Date.parse(b.expiresAt)) || a.grantedAt.localeCompare(b.grantedAt) || a.id.localeCompare(b.id));
 }
 
-export async function useResetCard(tokens: AuthTokens, cardId: string, requestId: string, request: typeof fetch = fetch): Promise<ResetCardOutcome> {
-  const result = await requestCards(tokens, request, { credit_id: cardId, redeem_request_id: requestId });
+export async function useResetCard({ tokens, cardId, requestId, request = fetch }: { tokens: AuthTokens; cardId: ResetCardId; requestId: ResetRequestId; request?: typeof fetch | undefined }): Promise<ResetCardOutcome> {
+  const result = await requestCards({ tokens, request, body: { credit_id: cardId, redeem_request_id: requestId } });
   try {
     return parseResetCardOutcome(isRecord(result) ? result.code : undefined);
   } catch { throw new Error(uncertain); }

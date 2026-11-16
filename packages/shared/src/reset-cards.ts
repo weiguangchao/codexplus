@@ -1,32 +1,22 @@
-import { isRecord } from './auth.js';
+import { z } from 'zod';
+import { resetCardIdSchema } from './identity.js';
 
-export interface ResetCard {
-  id: string;
-  resetType: string;
-  title: string | null;
-  description: string | null;
-  grantedAt: string;
-  expiresAt: string | null;
-}
+const dateSchema = z.string().refine((value) => Number.isFinite(Date.parse(value)));
+const resetCardSchema = z.object({ id: resetCardIdSchema, resetType: z.string().refine((value) => value.trim().length > 0),
+  title: z.string().nullable(), description: z.string().nullable(), grantedAt: dateSchema, expiresAt: dateSchema.nullable() });
+const resetCardOutcomeSchema = z.enum(['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed']);
 
-export type ResetCardOutcome = 'reset' | 'nothing_to_reset' | 'no_credit' | 'already_redeemed';
+export type ResetCard = z.infer<typeof resetCardSchema>;
+export type ResetCardOutcome = z.infer<typeof resetCardOutcomeSchema>;
 
 export function parseResetCard(value: unknown): ResetCard {
-  if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim() ||
-    typeof value.resetType !== 'string' || !value.resetType.trim() ||
-    typeof value.grantedAt !== 'string' || !Number.isFinite(Date.parse(value.grantedAt)) ||
-    !(value.expiresAt === null || typeof value.expiresAt === 'string' && Number.isFinite(Date.parse(value.expiresAt))) ||
-    !(value.title === null || typeof value.title === 'string') ||
-    !(value.description === null || typeof value.description === 'string')) {
-    throw new Error('重置卡信息格式无效。');
-  }
-  return { id: value.id, resetType: value.resetType, title: value.title, description: value.description,
-    grantedAt: value.grantedAt, expiresAt: value.expiresAt };
+  const result = resetCardSchema.safeParse(value);
+  if (!result.success) throw new Error('重置卡信息格式无效。');
+  return result.data;
 }
 
 export function parseResetCardOutcome(value: unknown): ResetCardOutcome {
-  if (typeof value !== 'string' || !['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed'].includes(value)) {
-    throw new Error('重置卡使用结果格式无效。');
-  }
-  return value as ResetCardOutcome;
+  const result = resetCardOutcomeSchema.safeParse(value);
+  if (!result.success) throw new Error('重置卡使用结果格式无效。');
+  return result.data;
 }

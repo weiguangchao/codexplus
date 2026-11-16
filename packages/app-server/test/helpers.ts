@@ -1,3 +1,4 @@
+import { parseEmail } from '@weiguangchao/codexplus-shared';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
@@ -5,7 +6,7 @@ import { startServer } from '../src/server.js';
 
 export { temporaryHome } from '../../shared/test/helpers.js';
 
-export const account: typeof fetch = async () => Response.json({ email: 'person@example.com' });
+export const account: typeof fetch = async () => Response.json({ email: parseEmail('person@example.com') });
 
 export async function freePort(): Promise<number> {
   const server = createServer();
@@ -18,7 +19,7 @@ export async function freePort(): Promise<number> {
   return address.port;
 }
 
-export async function standalone(context: TestContext, home: string, port = 0, accountRequest = account) {
+export async function standalone({ context, home, port = 0, accountRequest = account }: { context: TestContext; home: string; port?: number | undefined; accountRequest?: { (input: RequestInfo | URL, init?: RequestInit): Promise<Response>; (input: string | URL | Request, init?: RequestInit): Promise<Response>; } | undefined }) {
   const server = await startServer({ home, userHome: home, codexHome: join(home, '.codex'), port, accountRequest });
   let open = true;
   context.after(async () => {

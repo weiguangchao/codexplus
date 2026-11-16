@@ -8,9 +8,9 @@ export function clipHeader(source: string, width: number, limit: number): string
   const lines = wrapWords(source, width).split('\n');
   if (lines.length <= limit) return lines;
   const paragraphs = source.split('\n').filter((value) => stripVTControlCharacters(value).trim());
-  const indices = paragraphs.length <= limit ? paragraphs.map((_, index) => index)
-    : limit === 1 ? [0] : [...Array.from({ length: limit - 1 }, (_, index) => index), paragraphs.length - 1];
-  return indices.map((index) => fit(paragraphs[index]!, width));
+  const selected = paragraphs.length <= limit ? paragraphs : limit === 1 ? paragraphs.slice(0, 1)
+    : [...paragraphs.slice(0, limit - 1), ...paragraphs.slice(-1)];
+  return selected.map((paragraph) => fit(paragraph, width));
 }
 
 export function selectBudget<T>(config: SelectConfig<T>, entries: { item: Choice<T> | Separator; index: number }[], source: string,

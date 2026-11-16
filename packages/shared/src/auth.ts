@@ -1,18 +1,22 @@
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { parseAuthDigest } from './identity.js';
+import type { AuthDigest, Email } from './identity.js';
 
-export interface AuthTokens {
-  access_token: string;
-  id_token?: unknown;
-  refresh_token?: unknown;
-  account_id?: unknown;
-}
+export const authSchema = z.object({
+  tokens: z.object({
+    access_token: z.string().refine((value) => value.trim().length > 0),
+    id_token: z.unknown().optional(),
+    refresh_token: z.unknown().optional(),
+    account_id: z.unknown().optional(),
+  }),
+  auth_mode: z.unknown().optional(),
+  OPENAI_API_KEY: z.unknown().optional(),
+  last_refresh: z.unknown().optional(),
+});
 
-export interface Auth {
-  auth_mode?: unknown;
-  OPENAI_API_KEY?: unknown;
-  tokens: AuthTokens;
-  last_refresh?: unknown;
-}
+export type Auth = z.infer<typeof authSchema>;
+export type AuthTokens = Auth['tokens'];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -26,41 +30,19 @@ export function parseAuth(content: string): Auth {
     throw new Error('auth.json 不是有效的 JSON 文件。');
   }
 
-  if (
-    !isRecord(auth) ||
-    !isRecord(auth.tokens) ||
-    typeof auth.tokens.access_token !== 'string' ||
-    !auth.tokens.access_token.trim()
-  ) {
-    throw new Error('auth.json 缺少 tokens.access_token，请使用通过 ChatGPT 登录生成的凭证。');
-  }
-
-  const tokens: AuthTokens = { access_token: auth.tokens.access_token };
-  for (const key of ['id_token', 'refresh_token', 'account_id'] as const) {
-    if (Object.hasOwn(auth.tokens, key)) {
-      tokens[key] = auth.tokens[key];
-    }
-  }
-  const filtered: Auth = { tokens };
-  for (const key of ['auth_mode', 'OPENAI_API_KEY', 'last_refresh'] as const) {
-    if (Object.hasOwn(auth, key)) {
-      filtered[key] = auth[key];
-    }
-  }
-  return filtered;
+  const result = authSchema.safeParse(auth);
+  if (!result.success) throw new Error('auth.json 缺少 tokens.access_token，请使用通过 ChatGPT 登录生成的凭证。');
+  return result.data;
 }
 
-export function credentialDirectory(email: string): string {
-  if (
-    !/^[^\s@/\\<>:"|?*]+@[^\s@/\\<>:"|?*]+$/u.test(email) ||
-    Array.from(email).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
-    Buffer.byteLength(`codex-${email}`) > 255
-  ) {
-    throw new Error('账号邮箱无效，无法生成凭证目录名。');
-  }
+export function credentialDirectory(email: Email): string {
   return `codex-${email}`;
 }
 
-export function authDigest(content: string): string {
-  return createHash('sha256').update(JSON.stringify(parseAuth(content))).digest('hex');
+export function authDigest(auth: Auth): AuthDigest {
+  const { tokens } = auth;
+  const canonical: Auth = { tokens: { access_token: tokens.access_token, id_token: tokens.id_token,
+    refresh_token: tokens.refresh_token, account_id: tokens.account_id },
+    auth_mode: auth.auth_mode, OPENAI_API_KEY: auth.OPENAI_API_KEY, last_refresh: auth.last_refresh };
+  return parseAuthDigest(createHash('sha256').update(JSON.stringify(canonical)).digest('hex'));
 }

@@ -37,3 +37,16 @@ for (const filePath of ['src/probe.js', 'src/probe.ts']) {
     }
   });
 }
+
+for (const [code, rule] of [
+  ['export const value = JSON.parse("{}");', '@typescript-eslint/no-unsafe-assignment'],
+  ['export const value = ({} as { name: string }).name;', '@typescript-eslint/consistent-type-assertions'],
+  ['export const first = [1][0]!;', '@typescript-eslint/no-non-null-assertion'],
+  ['console.log("diagnostic");', 'no-console'],
+  ['type State = { kind: "one" } | { kind: "two" }; export function act(state: State) { switch (state.kind) { case "one": return 1; default: return 0; } }', '@typescript-eslint/switch-exhaustiveness-check'],
+] satisfies [string, string][]) {
+  test(`lint 强制 TypeScript 规则 ${rule}`, async () => {
+    const results = await new ESLint().lintText(code, { filePath: 'test/probe.ts' });
+    assert.ok(results.some((result) => result.messages.some((message) => message.ruleId === rule)));
+  });
+}

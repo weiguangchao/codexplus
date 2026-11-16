@@ -6,11 +6,11 @@ export interface CodexProcess {
   command: string;
 }
 
-type RunCommand = (command: string, args: string[]) => Promise<string>;
+type RunCommand = (options: { command: string; args: string[] }) => Promise<string>;
 
 const execute = promisify(execFile);
 
-const runCommand: RunCommand = async (command, args) => {
+const runCommand: RunCommand = async ({ command, args }) => {
   const { stdout } = await execute(command, args, {
     encoding: 'utf8',
     timeout: 10_000,
@@ -20,15 +20,13 @@ const runCommand: RunCommand = async (command, args) => {
   return stdout;
 };
 
-export async function findCodexProcesses(
-  platform = process.platform,
-  run: RunCommand = runCommand,
+export async function findCodexProcesses({ platform = process.platform, run = runCommand }: { platform?: NodeJS.Platform | undefined; run?: RunCommand | undefined } = {}
 ): Promise<CodexProcess[]> {
   try {
     const windows = platform === 'win32';
     const output = windows
-      ? await run('tasklist.exe', ['/FI', 'IMAGENAME eq codex.exe', '/FO', 'CSV', '/NH'])
-      : await run('ps', ['-A', '-o', 'pid=', '-o', 'comm=']);
+      ? await run({ command: 'tasklist.exe', args: ['/FI', 'IMAGENAME eq codex.exe', '/FO', 'CSV', '/NH'] })
+      : await run({ command: 'ps', args: ['-A', '-o', 'pid=', '-o', 'comm='] });
     const processes: CodexProcess[] = [];
     for (const line of output.split(/\r?\n/u)) {
       const match = windows

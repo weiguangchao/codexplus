@@ -1,3 +1,4 @@
+import { expectValue } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { stripVTControlCharacters } from 'node:util';
@@ -33,13 +34,13 @@ test('进程确认把 PID、完整路径和警告交给同一个界面和详情�
     },
   });
   assert.equal(result, false);
-  assert.match(logged[0]!, /已取消切换/u);
+  assert.match(expectValue(logged[0]), /已取消切换/u);
 });
 
 test('更新登录的进程确认只提供取消和更新，更新选项保持危险标记', () => {
   const config = runningCodexConfig({ action: 'update', message: '仍要更新本机登录吗？', detail: 'PID 4501 codex', count: 1, default: false });
   const choices = config.choices.filter((item) => 'value' in item);
   assert.deepEqual(choices.map(({ value }) => value), [false, true]);
-  assert.equal(choices[1]!.tone, 'danger');
+  assert.equal(expectValue(choices[1]).tone, 'danger');
   assert.ok(String(config.message).includes('更新本机登录'));
 });

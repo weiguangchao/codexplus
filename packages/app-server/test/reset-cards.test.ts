@@ -1,3 +1,4 @@
+import { parseResetRequestId, parseResetCardId } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { listResetCards, useResetCard } from '../src/reset-cards.js';
@@ -25,7 +26,7 @@ test('只查询所选账号可用且未到期的卡片，先到期的排在前�
       { ...card, id: 'redeeming', status: 'redeeming' },
     ], available_count: 4 });
   };
-  const cards = await listResetCards(tokens, request);
+  const cards = await listResetCards({ tokens, request });
   assert.equal(calls, 1);
   assert.deepEqual(cards.map(({ id }) => id), ['earlier', 'later', 'card-1']);
   assert.equal(cards[0]?.description, 'Full reset');
@@ -46,7 +47,7 @@ for (const code of ['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed'
       assert.deepEqual(JSON.parse(String(options?.body)), { credit_id: 'chosen-card', redeem_request_id: 'same-attempt' });
       return Response.json({ code, windows_reset: 2, credit: { private: 'ignored' } });
     };
-    assert.equal(await useResetCard({ access_token: tokens.access_token }, 'chosen-card', 'same-attempt', request), code);
+    assert.equal(await useResetCard({ tokens: { access_token: tokens.access_token }, cardId: parseResetCardId('chosen-card'), requestId: parseResetRequestId('same-attempt'), request }), code);
     assert.equal(calls, 1);
   });
 }
@@ -54,7 +55,7 @@ for (const code of ['reset', 'nothing_to_reset', 'no_credit', 'already_redeemed'
 for (const status of [401, 403, 429, 500]) {
   test(`HTTP ${status} 不泄漏上游响应或 token`, async () => {
     const request: typeof fetch = async () => new Response('fake-secret-response', { status });
-    for (const task of [() => listResetCards(tokens, request), () => useResetCard(tokens, 'card', 'request', request)]) {
+    for (const task of [() => listResetCards({ tokens, request }), () => useResetCard({ tokens, cardId: parseResetCardId('card'), requestId: parseResetRequestId('request'), request })]) {
       await assert.rejects(task, (error: unknown) => {
         assert.ok(error instanceof Error);
         assert.match(error.message, new RegExp(`HTTP ${status}`, 'u'));
@@ -73,7 +74,7 @@ test('网络错误、非 JSON 和未知使用结果提示结果未确认，不�
       if (response instanceof Error) throw response;
       return response;
     };
-    await assert.rejects(useResetCard(tokens, 'card', 'request', request), (error: unknown) => {
+    await assert.rejects(useResetCard({ tokens, cardId: parseResetCardId('card'), requestId: parseResetRequestId('request'), request }), (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.match(error.message, /结果未能确认/u);
       assert.doesNotMatch(error.message, /fake-secret/u);
@@ -84,11 +85,11 @@ test('网络错误、非 JSON 和未知使用结果提示结果未确认，不�
 });
 
 test('无卡片正常返回，列表或有效卡片格式异常不伪造可用卡片', async () => {
-  assert.deepEqual(await listResetCards(tokens, async () => Response.json({ credits: [] })), []);
+  assert.deepEqual(await listResetCards({ tokens, request: async () => Response.json({ credits: [] }) }), []);
   for (const value of [null, {}, { credits: [null] }, { credits: [{ ...card, id: '' }] },
     { credits: [{ ...card, expires_at: 'invalid-date' }] }, { credits: [{ ...card, granted_at: null }] }]) {
-    await assert.rejects(listResetCards(tokens, async () => Response.json(value)), /格式无效/u);
+    await assert.rejects(listResetCards({ tokens, request: async () => Response.json(value) }), /格式无效/u);
   }
-  await assert.rejects(listResetCards(tokens, async () => { throw new Error('fake-secret'); }), /无法连接 ChatGPT/u);
-  await assert.rejects(listResetCards(tokens, async () => new Response('not json')), /JSON/u);
+  await assert.rejects(listResetCards({ tokens, request: async () => { throw new Error('fake-secret'); } }), /无法连接 ChatGPT/u);
+  await assert.rejects(listResetCards({ tokens, request: async () => new Response('not json') }), /JSON/u);
 });

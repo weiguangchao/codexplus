@@ -1,12 +1,17 @@
+import { z } from 'zod';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { credentialDirectory, expandPath, isRecord, readOptional, writeAtomic } from '@weiguangchao/codexplus-shared';
+import { credentialDirectory, expandPath, readOptional, writeAtomic } from '@weiguangchao/codexplus-shared';
 import type { Credential } from '@weiguangchao/codexplus-shared';
 
-async function readConfig(userHome: string, env: NodeJS.ProcessEnv): Promise<{ path: string; content: string } | null> {
+const configSchema = z.looseObject({ version: z.literal(1), providers: z.array(z.looseObject({
+  id: z.string(), enabled: z.boolean().nullish(), codexProfileHomePaths: z.unknown().optional(),
+})) });
+
+async function readConfig({ userHome, env }: { userHome: string; env: NodeJS.ProcessEnv }): Promise<{ path: string; content: string } | null> {
   const override = env.CODEXBAR_CONFIG?.trim();
   const xdg = env.XDG_CONFIG_HOME?.trim();
-  const xdgHome = xdg === '~' || xdg?.startsWith('~/') ? expandPath(userHome, xdg) : xdg;
-  const paths = override ? [expandPath(userHome, override)]
+  const xdgHome = xdg === '~' || xdg?.startsWith('~/') ? expandPath({ home: userHome, path: xdg }) : xdg;
+  const paths = override ? [expandPath({ home: userHome, path: override })]
     : xdgHome && isAbsolute(xdgHome) ? [join(xdgHome, 'codexbar', 'config.json')]
       : [join(userHome, '.config', 'codexbar', 'config.json'), join(userHome, '.codexbar', 'config.json')];
   for (const path of paths) {
@@ -23,31 +28,27 @@ export async function syncCodexBar({ userHome, home, credentials, currentEmail, 
   currentEmail: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
-  const saved = await readConfig(userHome, env);
+  const saved = await readConfig({ userHome, env });
   if (saved === null || !saved.content.trim()) return;
   let config: unknown;
   try { config = JSON.parse(saved.content); } catch {
     throw new Error(`${saved.path} 不是有效的 JSON，已有文件未被覆盖。`);
   }
-  if (!isRecord(config) || config.version !== 1 || !Array.isArray(config.providers) ||
-    !config.providers.every((entry: unknown) => isRecord(entry) && typeof entry.id === 'string' &&
-      (entry.enabled == null || typeof entry.enabled === 'boolean'))) {
-    throw new Error(`${saved.path} 格式无效，已有文件未被覆盖。`);
-  }
-  const provider = config.providers.find((entry: unknown) => isRecord(entry) && entry.id === 'codex');
-  if (!isRecord(provider)) return;
-  const paths: unknown = provider.codexProfileHomePaths ?? [];
-  if (!Array.isArray(paths) || !paths.every((path: unknown): path is string => typeof path === 'string')) {
-    throw new Error(`${saved.path} 的 codexProfileHomePaths 格式无效，已有文件未被覆盖。`);
-  }
+  const parsed = configSchema.safeParse(config);
+  if (!parsed.success) throw new Error(`${saved.path} 格式无效，已有文件未被覆盖。`);
+  const provider = parsed.data.providers.find((entry) => entry.id === 'codex');
+  if (!provider) return;
+  const parsedPaths = z.array(z.string()).safeParse(provider.codexProfileHomePaths ?? []);
+  if (!parsedPaths.success) throw new Error(`${saved.path} 的 codexProfileHomePaths 格式无效，已有文件未被覆盖。`);
+  const paths = parsedPaths.data;
   const root = resolve(home, 'credentials');
   const manual = paths.filter((path) => {
-    const expanded = expandPath(userHome, path);
+    const expanded = expandPath({ home: userHome, path });
     return dirname(expanded) !== root || !basename(expanded).startsWith('codex-');
   });
   const next = [...manual, ...credentials.filter(({ email }) => email !== currentEmail)
     .map(({ email }) => join(root, credentialDirectory(email)))];
   if (JSON.stringify(paths) === JSON.stringify(next)) return;
   provider.codexProfileHomePaths = next;
-  await writeAtomic(saved.path, `${JSON.stringify(config, null, 2)}\n`);
+  await writeAtomic({ path: saved.path, content: `${JSON.stringify(parsed.data, null, 2)}\n` });
 }

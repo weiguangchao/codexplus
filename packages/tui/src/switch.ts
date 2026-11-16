@@ -1,3 +1,4 @@
+import { writeOutput } from '@weiguangchao/codexplus-shared';
 import { confirm } from '@inquirer/prompts';
 import type { Credential } from '@weiguangchao/codexplus-shared';
 
@@ -24,7 +25,7 @@ export async function confirmRunningCodex({
   authPath = '~/.codex/auth.json',
   findProcesses,
   ask = ({ message, detail, default: answer }) => confirm({ message: `${message}\n${detail}`, default: answer }),
-  log = console.log,
+  log = writeOutput,
 }: SwitchOptions): Promise<RunningCodexDecision> {
   const processes = await findProcesses();
   const verb = action === 'update' ? '更新' : '切换';
@@ -43,16 +44,13 @@ export async function confirmRunningCodex({
   return true;
 }
 
-export async function switchCredential(
-  store: { switch(credential: Credential): Promise<void>; restartCodexServer(): Promise<void> },
-  credential: Credential,
-  options: SwitchOptions,
+export async function switchCredential({ store, credential, options }: { store: { switch(credential: Credential): Promise<void>; restartCodexServer(): Promise<void> }; credential: Credential; options: SwitchOptions }
 ): Promise<void> {
   const decision = await confirmRunningCodex(options);
   if (!decision) {
     return;
   }
   await store.switch(credential);
-  (options.log ?? console.log)(`已切换到：${credential.email}`);
+  (options.log ?? writeOutput)(`已切换到：${credential.email}`);
   if (decision === 'restart') await store.restartCodexServer();
 }

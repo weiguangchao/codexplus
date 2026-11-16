@@ -42,7 +42,7 @@ export function renderAccountInfo(info: AccountInfo, now = Date.now(), columns =
     stepTitle('账户信息', '当前套餐与剩余额度'),
     `  ${info.email === null ? '无法识别邮箱' : maskEmail(info.email)} ${styleText('green', `${glyph.filled} 当前`)}`,
     '',
-    `  ${styleText('dim', '当前套餐')}  ChatGPT ${clean(Object.hasOwn(plans, info.planType) ? plans[info.planType]! : info.planType)}`,
+    `  ${styleText('dim', '当前套餐')}  ChatGPT ${clean(Object.hasOwn(plans, info.planType) ? (plans[info.planType] ?? info.planType) : info.planType)}`,
     `  ${styleText('dim', '到期时间')}  ${info.expiresAt === null ? '未提供' : date(info.expiresAt)}`,
     '',
     renderQuota('五小时额度', info.fiveHour, true, now, columns),
@@ -52,7 +52,7 @@ export function renderAccountInfo(info: AccountInfo, now = Date.now(), columns =
     ? `  ${wrapWords(line.slice(2), Math.max(1, columns - 2)).replaceAll('\n', '\n  ')}` : wrapWords(line, columns)).join('\n');
 }
 
-export function accountInfoConfig(info: AccountInfo, now = Date.now()): SelectConfig<'refresh' | 'back'> {
+export function accountInfoConfig({ info, now = Date.now() }: { info: AccountInfo; now?: number | undefined }): SelectConfig<'refresh' | 'back'> {
   return {
     message: (columns) => renderAccountInfo(info, now, columns - 1),
     compactMessage: (columns, _rows, availableRows) => accountSummary(info, columns, availableRows, now),
@@ -62,13 +62,13 @@ export function accountInfoConfig(info: AccountInfo, now = Date.now()): SelectCo
 }
 
 async function prompt(info: AccountInfo): Promise<'refresh' | 'back' | typeof BACK> {
-  return await escapable((context) => select(accountInfoConfig(info), context));
+  return await escapable((context) => select({ config: accountInfoConfig({ info }), context }));
 }
 
 export function accountSummary(info: AccountInfo, columns: number, availableRows = 4, now = Date.now()): string {
   const remaining = (window: QuotaWindow | null) => window === null ? styleText('dim', '未提供')
     : styleText(quotaColor(Math.round(window.remainingPercent)), `${Math.round(window.remainingPercent)}%`);
-  const plan = clean(Object.hasOwn(plans, info.planType) ? plans[info.planType]! : info.planType);
+  const plan = clean(Object.hasOwn(plans, info.planType) ? (plans[info.planType] ?? info.planType) : info.planType);
   const identity = [fit(`账户信息  ${plan}`, columns - 1), info.email === null ? '无法识别邮箱' : maskEmail(info.email)];
   const five = `五小时剩余 ${remaining(info.fiveHour)}`;
   const weekly = `每周剩余 ${remaining(info.weekly)}`;
@@ -83,9 +83,9 @@ export function accountSummary(info: AccountInfo, columns: number, availableRows
     .find((value) => wrapWords(value, columns - 1).split('\n').length <= availableRows) ?? basic;
 }
 
-export async function accountInfoFlow(store: Pick<Session, 'accountInfo'>, ask = prompt): Promise<void> {
+export async function accountInfoFlow({ store, ask = prompt }: { store: Pick<Session, 'accountInfo'>; ask?: ((info: AccountInfo) => Promise<"refresh" | "back" | typeof BACK>) | undefined }): Promise<void> {
   for (;;) {
-    const info = await withSpinner('正在查询当前账户信息…', () => store.accountInfo());
+    const info = await withSpinner({ text: '正在查询当前账户信息…', task: () => store.accountInfo() });
     if (await ask(info) !== 'refresh') return;
   }
 }

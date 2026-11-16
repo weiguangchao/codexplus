@@ -1,3 +1,5 @@
+import { expectValue } from '../../shared/test/helpers.js';
+import { parseEmail } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,8 +11,8 @@ import { confirmRunningCodex, switchCredential } from '../src/switch.js';
 test('有运行中的进程时显示 PID，默认取消且不修改当前凭证', async (context) => {
   const home = await mkdtemp(join(tmpdir(), 'codexplus-switch-'));
   context.after(() => rm(home, { recursive: true, force: true }));
-  const store = new Session('http://127.0.0.1:1', home, join(home, '.codex', 'auth.json'), async () => {});
-  const credential = { type: 'codex', email: 'person@example.com' } as const;
+  const store = new Session({ url: 'http://127.0.0.1:1', userHome: home, codexAuthPath: join(home, '.codex', 'auth.json'), stop: async () => {} });
+  const credential = { type: 'codex', email: parseEmail('person@example.com') } as const;
   await mkdir(join(home, '.codex'));
   const current = '{"tokens":{"access_token":"fake-current-access"}}';
   await writeFile(store.codexAuthPath, current);
@@ -18,7 +20,7 @@ test('有运行中的进程时显示 PID，默认取消且不修改当前凭证'
   let detail = '';
   let asked = false;
 
-  await switchCredential(store, credential, {
+  await switchCredential({ store, credential, options: {
     findProcesses: async () => [{ pid: 4401, command: 'codex' }, { pid: 4402, command: 'Codex' }],
     ask: async (options) => {
       asked = true;
@@ -30,7 +32,7 @@ test('有运行中的进程时显示 PID，默认取消且不修改当前凭证'
       return options.default;
     },
     log: (message) => messages.push(message),
-  });
+  } });
 
   assert.equal(asked, true);
   assert.equal(await readFile(store.codexAuthPath, 'utf8'), current);
@@ -40,64 +42,64 @@ test('有运行中的进程时显示 PID，默认取消且不修改当前凭证'
 
 test('明确确认后才执行切换', async () => {
   const events: string[] = [];
-  const credential = { type: 'codex', email: 'person@example.com' } as const;
-  await switchCredential({ switch: async (selected) => {
+  const credential = { type: 'codex', email: parseEmail('person@example.com') } as const;
+  await switchCredential({ store: { switch: async (selected) => {
     assert.equal(selected, credential);
     events.push('switch');
-  }, restartCodexServer: async () => assert.fail('普通切换不应重启') }, credential, {
+  }, restartCodexServer: async () => assert.fail('普通切换不应重启') }, credential, options: {
     findProcesses: async () => [{ pid: 4501, command: 'codex' }],
     ask: async () => {
       events.push('confirm');
       return true;
     },
     log: (message) => events.push(message),
-  });
+  } });
   assert.ok(events.indexOf('confirm') < events.indexOf('switch'));
   assert.equal(events.at(-1), '已切换到：person@example.com');
 });
 
 test('没有运行中的进程时直接切换，不显示额外确认', async () => {
   let switched = false;
-  await switchCredential({ switch: async () => { switched = true; }, restartCodexServer: async () => assert.fail('没有进程时不应重启') }, { type: 'codex', email: 'person@example.com' }, {
+  await switchCredential({ store: { switch: async () => { switched = true; }, restartCodexServer: async () => assert.fail('没有进程时不应重启') }, credential: { type: 'codex', email: parseEmail('person@example.com') }, options: {
     findProcesses: async () => [],
     ask: async () => assert.fail('没有进程时不应再次确认'),
     log: () => {},
-  });
+  } });
   assert.equal(switched, true);
 });
 
 test('检测失败或 Ctrl+C 取消确认时不执行切换', async () => {
-  const credential = { type: 'codex', email: 'person@example.com' } as const;
+  const credential = { type: 'codex', email: parseEmail('person@example.com') } as const;
   const store = { switch: async () => assert.fail('不应修改凭证'), restartCodexServer: async () => assert.fail('不应重启') };
-  await assert.rejects(switchCredential(store, credential, {
+  await assert.rejects(switchCredential({ store, credential, options: {
     findProcesses: async () => { throw new Error('检测失败'); },
     ask: async () => assert.fail('检测失败时不应确认'),
     log: () => {},
-  }), /检测失败/u);
-  await assert.rejects(switchCredential(store, credential, {
+  } }), /检测失败/u);
+  await assert.rejects(switchCredential({ store, credential, options: {
     findProcesses: async () => [{ pid: 4601, command: 'codex' }],
     ask: async () => { throw new Error('ExitPromptError'); },
     log: () => {},
-  }), /ExitPromptError/u);
+  } }), /ExitPromptError/u);
 });
 
 test('选择重启时先切换，切换失败不重启，重启失败保留已完成的切换', async () => {
   const events: string[] = [];
-  const credential = { type: 'codex', email: 'person@example.com' } as const;
+  const credential = { type: 'codex', email: parseEmail('person@example.com') } as const;
   const options = { findProcesses: async () => [{ pid: 4501, command: 'codex' }], ask: async () => 'restart' as const, log: () => {} };
-  await switchCredential({
+  await switchCredential({ store: {
     switch: async () => { events.push('switch'); },
     restartCodexServer: async () => { events.push('restart'); },
-  }, credential, options);
+  }, credential, options });
   assert.deepEqual(events, ['switch', 'restart']);
-  await assert.rejects(switchCredential({
+  await assert.rejects(switchCredential({ store: {
     switch: async () => { throw new Error('切换失败'); },
     restartCodexServer: async () => assert.fail('切换失败不应重启'),
-  }, credential, options), /切换失败/u);
-  await assert.rejects(switchCredential({
+  }, credential, options }), /切换失败/u);
+  await assert.rejects(switchCredential({ store: {
     switch: async () => { events.push('switched-again'); },
     restartCodexServer: async () => { throw new Error('重启失败'); },
-  }, credential, options), /重启失败/u);
+  }, credential, options }), /重启失败/u);
   assert.deepEqual(events, ['switch', 'restart', 'switched-again']);
 });
 
@@ -116,6 +118,6 @@ test('更新本机登录时，进程确认使用更新文案并说明会改写�
     },
     log: (message) => messages.push(message),
   }), false);
-  assert.match(messages.at(-1)!, /已取消更新/u);
+  assert.match(expectValue(messages.at(-1)), /已取消更新/u);
   assert.ok(messages.every((message) => !message.includes('切换')));
 });

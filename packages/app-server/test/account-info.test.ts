@@ -1,10 +1,11 @@
+import { parseEmail } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { lookupAccountInfo } from '../src/account-info.js';
 
 const tokens = { access_token: 'fake-access', account_id: 'fake-account', refresh_token: 'never-send-refresh' };
 const window = (seconds: number, used = 32) => ({ used_percent: used, limit_window_seconds: seconds, reset_at: 1_800_000_000 });
-const usage = { email: 'developer@example.com', account_id: 'fake-account', plan_type: 'plus',
+const usage = { email: parseEmail('developer@example.com'), account_id: 'fake-account', plan_type: 'plus',
   rate_limit: { primary_window: window(18_000), secondary_window: window(604_800, 58) } };
 
 test('按当前账号读取实时套餐到期时间及剩余额度，仅发送已有 access token', async () => {
@@ -26,7 +27,7 @@ test('按当前账号读取实时套餐到期时间及剩余额度，仅发送�
     }
     return Response.json(usage);
   };
-  assert.deepEqual(await lookupAccountInfo(tokens, request), {
+  assert.deepEqual(await lookupAccountInfo({ tokens, request }), {
     email: usage.email, planType: 'plus', expiresAt: '2030-12-15T15:59:00.000Z',
     fiveHour: { remainingPercent: 68, resetsAt: new Date(1_800_000_000_000).toISOString() },
     weekly: { remainingPercent: 42, resetsAt: new Date(1_800_000_000_000).toISOString() },
@@ -41,7 +42,7 @@ test('按窗口时长分类，只有每周窗口时不误标为五小时，不�
     [{ primary_window: window(3600), secondary_window: null }, null, null],
     [null, null, null],
   ] as const) {
-    const info = await lookupAccountInfo(tokens, async (url) => Response.json(String(url).includes('/subscriptions') ? {} : { ...usage, rate_limit }));
+    const info = await lookupAccountInfo({ tokens, request: async (url) => Response.json(String(url).includes('/subscriptions') ? {} : { ...usage, rate_limit }) });
     assert.equal(info.fiveHour?.remainingPercent ?? null, fiveHour);
     assert.equal(info.weekly?.remainingPercent ?? null, weekly);
   }
@@ -56,7 +57,7 @@ test('套餐日期缺失、无效或查询失败时仍返回额度，不回退 J
       if (subscription === 'invalid-json') return new Response('<html>fake-secret</html>');
       return Response.json(subscription);
     };
-    const info = await lookupAccountInfo({ ...tokens, id_token: 'fake-expiry-claim' }, request);
+    const info = await lookupAccountInfo({ tokens: { ...tokens, id_token: 'fake-expiry-claim' }, request });
     assert.equal(info.expiresAt, null);
     assert.equal(info.fiveHour?.remainingPercent, 68);
   }
@@ -72,23 +73,23 @@ test('缺少本机账号 ID 时使用额度接口返回的账号 ID 查询套餐
     }
     return Response.json(usage);
   };
-  await lookupAccountInfo({ access_token: 'fake-access' }, request);
+  await lookupAccountInfo({ tokens: { access_token: 'fake-access' }, request });
   assert.equal(urls.length, 2);
   let calls = 0;
-  await lookupAccountInfo({ access_token: 'fake-access' }, async () => { calls++; return Response.json({ ...usage, account_id: undefined }); });
+  await lookupAccountInfo({ tokens: { access_token: 'fake-access' }, request: async () => { calls++; return Response.json({ ...usage, account_id: undefined }); } });
   assert.equal(calls, 1);
 });
 
 test('拒绝账号不一致、无效用量和异常响应，错误不包含 token 或响应正文', async () => {
   for (const value of [null, {}, { ...usage, account_id: 'other-account' }, { ...usage, rate_limit: 'bad' },
     { ...usage, rate_limit: { primary_window: { ...window(18_000), used_percent: 'fake-secret' } } }]) {
-    await assert.rejects(lookupAccountInfo(tokens, async () => Response.json(value)), /格式无效|不一致/u);
+    await assert.rejects(lookupAccountInfo({ tokens, request: async () => Response.json(value) }), /格式无效|不一致/u);
   }
   for (const response of [401, 403, 429, 500, 'network', 'json']) {
-    await assert.rejects(lookupAccountInfo(tokens, async () => {
+    await assert.rejects(lookupAccountInfo({ tokens, request: async () => {
       if (response === 'network') throw new Error('fake-secret');
       return new Response('fake-secret', typeof response === 'number' ? { status: response } : {});
-    }), (error: unknown) => {
+    } }), (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.doesNotMatch(error.message, /fake-secret|fake-access/u);
       assert.match(error.message, typeof response === 'number' ? new RegExp(`HTTP ${response}`, 'u') : /无法连接|JSON/u);

@@ -13,7 +13,7 @@ for (const action of ['log'] as const) {
     await writeFile(file, 'unchanged');
     for (const home of [missing, file, join(file, 'nested')]) {
       const messages: string[] = [];
-      await assert.rejects(runAdmin({ kind: 'admin', action, home: relative(process.cwd(), home) }, (message) => messages.push(message)), (error) => {
+      await assert.rejects(runAdmin({ command: { kind: 'admin', action, home: relative(process.cwd(), home) }, log: (message) => messages.push(message) }), (error) => {
         assert.ok(error instanceof Error);
         assert.ok(error.message.includes(resolve(home)));
         assert.match(error.message, /检查 --home 或先运行 codexplus-server/u);
@@ -32,7 +32,7 @@ for (const action of ['log'] as const) {
     await mkdir(home);
     const messages: string[] = [];
     const command = { kind: 'admin' as const, action, home };
-    await runAdmin(command, (message) => messages.push(message));
+    await runAdmin({ command, log: (message) => messages.push(message) });
     assert.match(messages.join('\n'), /暂无操作记录/u);
     assert.equal((await stat(home)).isDirectory(), true);
   });

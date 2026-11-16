@@ -6,3 +6,6 @@ export * from './options.js';
 export * from './freshness.js';
 export * from './reset-cards.js';
 export * from './account-info.js';
+export * from './identity.js';
+export * from './session.js';
+export * from './output.js';

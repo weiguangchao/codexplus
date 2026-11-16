@@ -83,7 +83,8 @@ export function selectLayout<T>(config: SelectConfig<T>, state: SelectState, col
   const noMatch = config.searchable && !entries.some(({ item }) => !Separator.isSeparator(item) && !back(item));
   const notice = noMatch ? [fit('无匹配账号，Ctrl+U 清空', width)] : [];
   const search = config.searchable ? [fit(`筛选 ${state.query || '输入显示邮箱'}`, width)] : [];
-  const compact = config.compactMessage === undefined ? undefined : (limit: number) => resolve(config.compactMessage!, columns, rows, limit);
+  const compactMessage = config.compactMessage;
+  const compact = compactMessage === undefined ? undefined : (limit: number) => resolve(compactMessage, columns, rows, limit);
   const { header, detailSize, pageSize, help, gap, layoutEntries } = selectBudget(config, entries, source, compact, width, height, search.length, notice.length);
   const detailLines = Array.from({ length: detailSize }, (_, index) => detail[index] ? `  ${detail[index]}` : '');
   if (detail.length > detailSize && detailSize) {

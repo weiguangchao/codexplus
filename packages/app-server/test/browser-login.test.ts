@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { expectValue } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
@@ -18,12 +20,12 @@ test('Windows 支持独立可执行文件和 npm shim，直接启动 Node 避免
   await writeFile(join(npm, 'codex.cmd'), 'fixture');
   await writeFile(join(npm, 'node_modules', '@openai', 'codex', 'package.json'), '{}');
   await writeFile(script, 'fixture');
-  const [command, ...args] = await codexCommand({ Path: npm }, 'win32');
+  const [command, ...args] = await codexCommand({ env: { Path: npm }, platform: 'win32' });
   assert.equal(command, process.execPath);
   assert.deepEqual(await Promise.all(args.map((path) => realpath(path))), [await realpath(script)]);
   await writeFile(join(npm, 'codex.exe'), 'fixture');
-  assert.deepEqual(await codexCommand({ PATH: npm }, 'win32'), [join(npm, 'codex.exe')]);
-  await assert.rejects(codexCommand({ Path: home }, 'win32'), /安装官方 Codex CLI/u);
+  assert.deepEqual(await codexCommand({ env: { PATH: npm }, platform: 'win32' }), [join(npm, 'codex.exe')]);
+  await assert.rejects(codexCommand({ env: { Path: home }, platform: 'win32' }), /安装官方 Codex CLI/u);
 });
 
 test('官方协议完成浏览器登录，返回前退出子进程并清理临时目录', async (context) => {
@@ -36,17 +38,17 @@ test('官方协议完成浏览器登录，返回前退出子进程并清理临�
     onUrl: (url) => urls.push(url),
     open: quiet,
     launch: (env) => {
-      directory = env.CODEX_HOME!;
+      directory = expectValue(env.CODEX_HOME);
       assert.notEqual(directory, process.env.CODEX_HOME);
       const child = spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_RECORD: record } });
       child.once('close', (code) => { processExit = code; });
       return child;
     },
   });
-  assert.deepEqual(JSON.parse(auth), { auth_mode: 'chatgpt', tokens: { access_token: 'browser-access', refresh_token: 'browser-refresh' } });
+  assert.deepEqual(auth, { auth_mode: 'chatgpt', tokens: { access_token: 'browser-access', refresh_token: 'browser-refresh' } });
   assert.deepEqual(urls, ['https://auth.openai.com/oauth/authorize?fixture=1']);
-  const messages = (await readFile(record, 'utf8')).trim().split('\n').map((line) => JSON.parse(line) as { method: string; params: unknown });
-  assert.deepEqual(messages.slice(1), [
+  const messages = (await readFile(record, 'utf8')).trim().split('\n').slice(1).map((line) => z.object({ method: z.string(), params: z.unknown() }).parse(JSON.parse(line)));
+  assert.deepEqual(messages, [
     { method: 'initialize', params: { clientInfo: { name: 'codexplus', title: 'codexplus', version: '0.1.0' } } },
     { method: 'initialized', params: {} },
     { method: 'account/login/start', params: { type: 'chatgpt' } },
@@ -57,7 +59,7 @@ test('官方协议完成浏览器登录，返回前退出子进程并清理临�
 
 test('匹配 loginId，支持完成通知先于启动响应和手动打开浏览器', async () => {
   const early = await browserLogin({ launch: (env) => spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: 'early' } }), open: quiet });
-  assert.equal(JSON.parse(early).tokens.access_token, 'browser-access');
+  assert.equal(early.tokens.access_token, 'browser-access');
   let manual = false;
   const auth = await browserLogin({
     launch: (env) => spawn(process.execPath, [fixture], { env }),
@@ -65,7 +67,7 @@ test('匹配 loginId，支持完成通知先于启动响应和手动打开浏览
     onBrowserError: () => { manual = true; },
   });
   assert.ok(manual);
-  assert.equal(JSON.parse(auth).tokens.access_token, 'browser-access');
+  assert.equal(auth.tokens.access_token, 'browser-access');
 });
 
 test('取消发送官方取消接口，忽略其他 loginId，清理临时目录和子进程', async (context) => {
@@ -79,7 +81,7 @@ test('取消发送官方取消接口，忽略其他 loginId，清理临时目录
     onUrl: () => { controller.abort(new Error('cancelled')); },
     open: async () => { assert.fail('取消后不应打开浏览器'); },
     launch: (env) => {
-      directory = env.CODEX_HOME!;
+      directory = expectValue(env.CODEX_HOME);
       const child = spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: 'pending', LOGIN_FIXTURE_RECORD: record } });
       child.once('close', () => { closed = true; });
       return child;
@@ -94,7 +96,7 @@ test('登录启动和等待期间均有超时，失败不会接受其他账号�
   for (const mode of ['startup-timeout', 'pending']) {
     let directory = '';
     await assert.rejects(browserLogin({
-      launch: (env) => { directory = env.CODEX_HOME!; return spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: mode } }); },
+      launch: (env) => { directory = expectValue(env.CODEX_HOME); return spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: mode } }); },
       open: quiet,
       timeoutMs: 1500,
     }), /超时/u);
@@ -107,7 +109,7 @@ test('CLI 不可用、授权失败、凭证缺失和格式错误均不返回凭�
   for (const mode of ['exit', 'rpc-error', 'denied', 'missing-file', 'invalid-file', 'bad-url']) {
     let directory = '';
     await assert.rejects(browserLogin({
-      launch: (env) => { directory = env.CODEX_HOME!; return spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: mode } }); },
+      launch: (env) => { directory = expectValue(env.CODEX_HOME); return spawn(process.execPath, [fixture], { env: { ...env, LOGIN_FIXTURE_MODE: mode } }); },
       open: quiet,
     }), (error: unknown) => {
       assert.ok(error instanceof Error);

@@ -1,34 +1,15 @@
-import { isRecord } from './auth.js';
+import { z } from 'zod';
 
-export interface QuotaWindow {
-  remainingPercent: number;
-  resetsAt: string | null;
-}
+const dateSchema = z.string().refine((value) => Number.isFinite(Date.parse(value))).nullable();
+const quotaWindowSchema = z.object({ remainingPercent: z.number().min(0).max(100), resetsAt: dateSchema });
+const accountInfoSchema = z.object({ email: z.string().nullable(), planType: z.string().refine((value) => value.trim().length > 0),
+  expiresAt: dateSchema, fiveHour: quotaWindowSchema.nullable(), weekly: quotaWindowSchema.nullable() });
 
-export interface AccountInfo {
-  email: string | null;
-  planType: string;
-  expiresAt: string | null;
-  fiveHour: QuotaWindow | null;
-  weekly: QuotaWindow | null;
-}
-
-const date = (value: unknown): value is string | null => value === null || typeof value === 'string' && Number.isFinite(Date.parse(value));
-
-function parseWindow(value: unknown): QuotaWindow | null {
-  if (value === null) return null;
-  if (!isRecord(value) || typeof value.remainingPercent !== 'number' || !Number.isFinite(value.remainingPercent) ||
-    value.remainingPercent < 0 || value.remainingPercent > 100 || !date(value.resetsAt)) {
-    throw new Error('账户额度信息格式无效。');
-  }
-  return { remainingPercent: value.remainingPercent, resetsAt: value.resetsAt };
-}
+export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
+export type AccountInfo = z.infer<typeof accountInfoSchema>;
 
 export function parseAccountInfo(value: unknown): AccountInfo {
-  if (!isRecord(value) || !(value.email === null || typeof value.email === 'string') ||
-    typeof value.planType !== 'string' || !value.planType.trim() || !date(value.expiresAt)) {
-    throw new Error('账户信息格式无效。');
-  }
-  return { email: value.email, planType: value.planType, expiresAt: value.expiresAt,
-    fiveHour: parseWindow(value.fiveHour), weekly: parseWindow(value.weekly) };
+  const result = accountInfoSchema.safeParse(value);
+  if (!result.success) throw new Error('账户信息格式无效。');
+  return result.data;
 }

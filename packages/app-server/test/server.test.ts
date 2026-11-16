@@ -1,15 +1,16 @@
+import { parseCredentialSnapshots, protocolVersion, requestService } from '@weiguangchao/codexplus-shared';
+import { expectValue } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { connect, Server } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { protocolVersion, requestService } from '@weiguangchao/codexplus-shared';
 import { startServer } from '../src/server.js';
 import { freePort, standalone, temporaryHome } from './helpers.js';
 
 test('废弃本机和管理接口不创建任何文件', async (context) => {
   const home = await temporaryHome(context);
-  const server = await standalone(context, home);
+  const server = await standalone({ context, home });
   const before = await readdir(home);
   for (const [method, path] of [['POST', '/v1/local/challenge'], ['POST', '/v1/admin/pair'], ['POST', '/v1/pair'], ['GET', '/v1/session']] as const) {
     const response = await fetch(`${server.url}${path}`, { method, ...(method === 'POST' ? { headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}) });
@@ -20,7 +21,7 @@ test('废弃本机和管理接口不创建任何文件', async (context) => {
 
 test('未完成的上传请求不会阻塞其他客户端操作', async (context) => {
   const home = await temporaryHome(context);
-  const server = await standalone(context, home);
+  const server = await standalone({ context, home });
   const url = new URL(server.url);
   const socket = connect(Number(url.port), url.hostname);
   try {
@@ -30,7 +31,7 @@ test('未完成的上传请求不会阻塞其他客户端操作', async (context
     });
     socket.write(`POST /rpc HTTP/1.1\r\nHost: localhost:${url.port}\r\nContent-Type: application/json\r\nContent-Length: 100\r\nExpect: 100-continue\r\n\r\n{`);
     await new Promise<void>((resolve) => socket.once('data', () => resolve()));
-    assert.deepEqual(await requestService(server.url, 'credentials.list', undefined, undefined, 2_000), { credentials: [] });
+    assert.deepEqual(await requestService({ url: server.url, method: 'credentials.list', params: undefined, sessionToken: undefined, timeoutMs: 2_000 }), { credentials: [] });
   } finally {
     socket.destroy();
   }
@@ -38,19 +39,19 @@ test('未完成的上传请求不会阻塞其他客户端操作', async (context
 
 test('并发上传不同账户不会丢失服务端索引', async (context) => {
   const home = await temporaryHome(context);
-  const server = await standalone(context, home, 0, async (_url, options) => {
+  const server = await standalone({ context, home, port: 0, accountRequest: async (_url, options) => {
     const token = new Headers(options?.headers).get('Authorization')?.slice(7);
     return Response.json({ email: `${token}@example.com` });
-  });
-  await Promise.all(['one', 'two', 'three'].map((value) => requestService(server.url, 'credentials.upload',
-    { base: null, auth: { tokens: { access_token: value } } })));
-  const result = await requestService(server.url, 'credentials.list') as { credentials: unknown[] };
-  assert.equal(result.credentials.length, 3);
+  } });
+  await Promise.all(['one', 'two', 'three'].map((value) => requestService({ url: server.url, method: 'credentials.upload',
+    params: { base: null, auth: { tokens: { access_token: value } } } })));
+  const result = parseCredentialSnapshots(await requestService({ url: server.url, method: 'credentials.list' }));
+  assert.equal(result.length, 3);
 });
 
 test('拒绝跨站请求、无效请求、过大内容和路径穿越，错误不包含凭证', async (context) => {
   const home = await temporaryHome(context);
-  const server = await standalone(context, home);
+  const server = await standalone({ context, home });
   const origin = await fetch(`${server.url}/rpc`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(origin.status, 403);
   for (const [body, status] of [['{', 200], [JSON.stringify({ auth: 'fake-secret' }), 200], ['x'.repeat(129 * 1024), 413]] as const) {
@@ -61,7 +62,7 @@ test('拒绝跨站请求、无效请求、过大内容和路径穿越，错误�
   }
   const wrongType = await fetch(`${server.url}/rpc`, { method: 'POST', body: '{}' });
   assert.equal(wrongType.status, 415);
-  await assert.rejects(requestService(server.url, 'credentials.download', { type: 'codex', email: '../a@example.com' }), /邮箱无效/u);
+  await assert.rejects(requestService({ url: server.url, method: 'credentials.download', params: { type: 'codex', email: '../a@example.com' } }), /邮箱无效/u);
 });
 
 test('服务端固定监听 127.0.0.1，不创建或读取旧授权文件', async (context) => {
@@ -73,31 +74,31 @@ test('服务端固定监听 127.0.0.1，不创建或读取旧授权文件', asyn
   context.after(() => server.close());
   assert.equal(listen.mock.calls[0]?.arguments[1], '127.0.0.1');
   assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+$/u);
-  assert.deepEqual(await requestService(server.url, 'health'), { service: 'codexplus', version: protocolVersion });
-  assert.deepEqual(await requestService(server.url, 'credentials.list'), { credentials: [] });
+  assert.deepEqual(await requestService({ url: server.url, method: 'health' }), { service: 'codexplus', version: protocolVersion });
+  assert.deepEqual(await requestService({ url: server.url, method: 'credentials.list' }), { credentials: [] });
   assert.equal(await readFile(legacy, 'utf8'), '{broken-legacy-access');
 });
 
 test('独立服务端重启后仍可直接读取凭证，不需要配对', async (context) => {
   const home = await temporaryHome(context);
   const port = await freePort();
-  let server = await standalone(context, home, port);
-  await requestService(server.url, 'credentials.upload', { auth: { tokens: { access_token: 'saved' } }, base: null });
+  let server = await standalone({ context, home, port });
+  await requestService({ url: server.url, method: 'credentials.upload', params: { auth: { tokens: { access_token: 'saved' } }, base: null } });
   await server.close();
-  server = await standalone(context, home, port);
-  const result = await requestService(server.url, 'credentials.list') as { credentials: unknown[] };
-  assert.equal(result.credentials.length, 1);
+  server = await standalone({ context, home, port });
+  const result = parseCredentialSnapshots(await requestService({ url: server.url, method: 'credentials.list' }));
+  assert.equal(result.length, 1);
   assert.equal((await readdir(home)).includes('server-access.json'), false);
 });
 
 test('拒绝非本机 Host、跨站浏览器和伪造代理头，允许 localhost', async (context) => {
-  const server = await standalone(context, await temporaryHome(context));
+  const server = await standalone({ context, home: await temporaryHome(context) });
   const port = new URL(server.url).port;
   const { request } = await import('node:http');
   const status = (headers: Record<string, string>) => new Promise<number>((resolve, reject) => {
     const req = request(`${server.url}/rpc`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } }, (response) => {
       response.resume();
-      response.on('end', () => resolve(response.statusCode!));
+      response.on('end', () => resolve(expectValue(response.statusCode)));
     });
     req.on('error', reject);
     req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'credentials.list' }));

@@ -1,3 +1,4 @@
+import { writeOutput } from '@weiguangchao/codexplus-shared';
 import { styleText } from 'node:util';
 import { BACK, escapable } from './prompts.js';
 import { stepTitle } from './screens.js';
@@ -7,9 +8,9 @@ import type { RunningCodexDecision, RunningCodexPrompt } from './switch.js';
 import type { SelectConfig } from './select-layout.js';
 
 export function logRunningCodex(message: string): void {
-  if (message.startsWith('  ')) console.log(styleText('dim', message));
-  else if (message.startsWith('检测到')) console.log(line(symbols.warning, styleText('yellow', message)));
-  else console.log(line(' ', styleText('dim', message)));
+  if (message.startsWith('  ')) writeOutput(styleText('dim', message));
+  else if (message.startsWith('检测到')) writeOutput(line(symbols.warning, styleText('yellow', message)));
+  else writeOutput(line(' ', styleText('dim', message)));
 }
 
 export function runningCodexConfig({ message, detail, count, action }: RunningCodexPrompt): SelectConfig<RunningCodexDecision> {
@@ -28,7 +29,7 @@ export function runningCodexConfig({ message, detail, count, action }: RunningCo
 
 export async function askRunningCodex(options: RunningCodexPrompt): Promise<RunningCodexDecision> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) options.detail.split('\n').forEach(logRunningCodex);
-  const answer = await escapable((context) => select(runningCodexConfig(options), context));
-  if (answer === true || answer === 'restart') console.log('');
+  const answer = await escapable((context) => select({ config: runningCodexConfig(options), context }));
+  if (answer === true || answer === 'restart') writeOutput('');
   return answer === BACK ? false : answer;
 }

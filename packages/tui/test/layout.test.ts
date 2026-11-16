@@ -1,9 +1,9 @@
+import { expectValue } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
-import { stripVTControlCharacters } from 'node:util';
-import { styleText } from 'node:util';
+import { stripVTControlCharacters, styleText } from 'node:util';
 import { pathWindow } from '../src/path-input.js';
 import { displayWidth, fit, fitPath, line as renderLine, pathLabel, wrapWords } from '../src/ui.js';
 
@@ -39,7 +39,7 @@ test('长路径保留首尾，文件名可容纳时完整显示，兼容中文�
       const shown = fitPath(path, columns);
       assert.ok(displayWidth(shown) <= columns, shown);
       assert.ok(shown.endsWith('auth.json'));
-      assert.ok(shown.startsWith(path[0]!));
+      assert.ok(shown.startsWith(expectValue(path[0])));
       assert.equal(shown.includes('…'), displayWidth(path) > columns);
     }
   }
@@ -74,7 +74,7 @@ test('路径输入窗口按光标滚动，首中尾及中文光标均留在单�
   const value = '/tmp/含有中文和空格的目录/another long directory/auth.json';
   for (const columns of [16, 32, 40, 60, 100]) {
     for (const cursor of [0, 5, 20, Array.from(value).length]) {
-      const view = pathWindow(value, cursor, columns);
+      const view = pathWindow({ value, cursor, columns });
       assert.ok(displayWidth(view.text) < columns);
       assert.ok(displayWidth(view.text.slice(0, view.cursor)) < columns);
       assert.ok(view.cursor >= 0 && view.cursor <= view.text.length);
@@ -105,7 +105,7 @@ test('含 emoji 的路径窗口宽度与 readline 相符，光标不进入下一
   const output = Object.assign(new PassThrough(), { columns: 40 });
   const rl = createInterface({ input: new PassThrough(), output, terminal: true });
   try {
-    const view = pathWindow(value, Array.from(value).length, 40);
+    const view = pathWindow({ value, cursor: Array.from(value).length, columns: 40 });
     rl.setPrompt('');
     rl.write(view.text);
     const cursor = rl.getCursorPos();

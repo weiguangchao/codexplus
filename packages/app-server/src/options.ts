@@ -12,12 +12,12 @@ export const serverUsage = [
 ].join('\n');
 
 export function parseServerCommand(args: string[]): ServerCommand {
-  const { values, positionals, allow } = parseOptions('codexplus-server', args, {
+  const { values, positionals, allow } = parseOptions({ program: 'codexplus-server', args, options: {
     home: { type: 'string' },
     limit: { type: 'string' },
     port: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
-  });
+  } });
   if (values.help) return { kind: 'help' };
   const home = resolveHome(values.home);
   if (positionals.length === 0) {
@@ -29,6 +29,6 @@ export function parseServerCommand(args: string[]): ServerCommand {
   }
   allow('home', 'limit');
   const limit = values.limit === undefined ? undefined : Number(values.limit);
-  if (limit !== undefined && (!/^\d+$/u.test(values.limit!) || !Number.isSafeInteger(limit) || limit < 1)) throw new Error('--limit 必须为正整数。');
+  if (limit !== undefined && ((values.limit === undefined || !/^\d+$/u.test(values.limit)) || !Number.isSafeInteger(limit) || limit < 1)) throw new Error('--limit 必须为正整数。');
   return { kind: 'admin', home, action: 'log', ...(limit === undefined ? {} : { limit }) };
 }
