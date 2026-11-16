@@ -1,10 +1,11 @@
+import { writeOutput, newerRefresh } from '@weiguangchao/codexplus-shared';
 import figures from '@inquirer/figures';
 import { Separator } from '@inquirer/prompts';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { styleText } from 'node:util';
-import { newerRefresh } from '@weiguangchao/codexplus-shared';
-import type { Credential, CurrentLogin } from '@weiguangchao/codexplus-shared';
+import type { Credential, CurrentLogin, Email } from '@weiguangchao/codexplus-shared';
 import { displayWidth, fit, wrapWords } from './text-layout.js';
+import type { Choice } from './select-layout.js';
 import { glyph, unicode } from './terminal-symbols.js';
 export { displayWidth, fit, wrapWords } from './text-layout.js';
 
@@ -49,7 +50,7 @@ export function maskEmail(email: string): string {
   return at < 0 ? maskName(email) : `${maskName(email.slice(0, at))}@${Array.from(email.slice(at + 1))[0] ?? ''}***`;
 }
 
-export function maskHomePath(path: string, userHome: string): string {
+export function maskHomePath({ path, userHome }: { path: string; userHome: string }): string {
   if (!isAbsolute(path)) return path;
   const inside = relative(userHome, path);
   if (inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) return path;
@@ -58,28 +59,25 @@ export function maskHomePath(path: string, userHome: string): string {
 
 export function describeCurrent(current: CurrentLogin, authPath = '~/.codex/auth.json'): string {
   const dot = (color: 'green' | 'yellow') => styleText(color, dots.filled);
-  if (current.status === 'saved') {
-    return `${dot('green')} ${styleText('bold', maskEmail(current.email))}`;
-  }
-  if (current.status === 'behind' || current.status === 'diverged') {
-    const note = current.status === 'behind' ? '账号库有更新版本' : '与账号库版本不一致';
-    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', note)}`;
-  }
-  if (current.status === 'ahead') {
-    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '有更新未保存')}`;
-  }
-  if (current.status === 'deleted') {
-    return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('dim', '已从账号库删除，本机登录保留')}`;
-  }
-  if (current.status === 'unsaved') {
-    return current.email === null
+  switch (current.status) {
+    case 'saved': return `${dot('green')} ${styleText('bold', maskEmail(current.email))}`;
+    case 'behind':
+    case 'diverged': {
+      const note = current.status === 'behind' ? '账号库有更新版本' : '与账号库版本不一致';
+      return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', note)}`;
+    }
+    case 'ahead': return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '有更新未保存')}`;
+    case 'deleted': return `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('dim', '已从账号库删除，本机登录保留')}`;
+    case 'unsaved': return current.email === null
       ? `${dot('yellow')} ${styleText('yellow', '无法识别')} ${styleText('dim', '与已保存的账号都不一致')}`
       : `${dot('yellow')} ${styleText('bold', maskEmail(current.email))} ${styleText('yellow', '未保存')}`;
+    case 'invalid': return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
+    case 'none': return styleText('dim', `${dots.empty} 未登录\n  未找到登录文件：\n  ${fitPath(authPath, (process.stdout.columns || 80) - 2)}`);
+    default: {
+      const _exhaustive: never = current;
+      return _exhaustive;
+    }
   }
-  if (current.status === 'invalid') {
-    return `${dot('yellow')} ${styleText('yellow', '登录文件无效或无法读取')}\n  ${current.reason}\n  请先在 Codex 中重新登录，或从其他文件添加有效凭证。`;
-  }
-  return styleText('dim', `${dots.empty} 未登录\n  未找到登录文件：\n  ${fitPath(authPath, (process.stdout.columns || 80) - 2)}`);
 }
 
 export function renderStatus(current: CurrentLogin, count: number, authPath = '~/.codex/auth.json'): string {
@@ -90,7 +88,7 @@ export function renderStatus(current: CurrentLogin, count: number, authPath = '~
   ].join('\n');
 }
 
-export function mainChoices(credentials: Credential[], current: CurrentLogin, authPath = '~/.codex/auth.json') {
+export function mainChoices({ credentials, current, authPath = '~/.codex/auth.json' }: { credentials: Credential[]; current: CurrentLogin; authPath?: string | undefined }) {
   const active = activeEmail(current);
   const others = credentials.filter((credential) => credential.email !== active).length;
   const switchDescription =
@@ -164,18 +162,18 @@ export function refreshDetails(local: unknown, server: unknown, localLabel = '�
   return `${localLabel}刷新时间：${time(local)}\n  服务端刷新时间：${time(server)}\n  ${advice}`;
 }
 
-export function switchChoices(credentials: Credential[], current: CurrentLogin, digest?: (email: string) => string | null) {
+export function switchChoices({ credentials, current, digest }: { credentials: Credential[]; current: CurrentLogin; digest?: ((email: Email) => string | null) | undefined }) {
   const active = activeEmail(current);
   const choices = [
-    ...credentials.map((credential) =>
+    ...credentials.map<Choice<Credential | null>>((credential) =>
       credential.email === active
         ? {
-            value: credential as Credential | null,
+            value: credential,
             name: maskEmail(credential.email),
             description: '这是正在使用的账号',
             disabled: currentLabel(),
           }
-        : { value: credential as Credential | null, name: maskEmail(credential.email),
+        : { value: credential, name: maskEmail(credential.email),
           ...(digest?.(credential.email) === null ? { disabled: '(凭证不可用)', description: '保存的凭证文件缺失或损坏，请重新添加该账号。' } : {}) },
     ),
     divider(),
@@ -185,11 +183,11 @@ export function switchChoices(credentials: Credential[], current: CurrentLogin, 
   return { choices, default: first };
 }
 
-export function resetCardChoices(credentials: Credential[], current: CurrentLogin) {
+export function resetCardChoices({ credentials, current }: { credentials: Credential[]; current: CurrentLogin }) {
   const active = 'email' in current ? current.email : null;
   return [
-    ...credentials.map((credential) => ({
-      value: credential as Credential | null,
+    ...credentials.map<Choice<Credential | null>>((credential) => ({
+      value: credential,
       name: credential.email === active
         ? `${styleText('dim', maskEmail(credential.email))} ${currentLabel()}`
         : maskEmail(credential.email),
@@ -199,10 +197,10 @@ export function resetCardChoices(credentials: Credential[], current: CurrentLogi
   ];
 }
 
-export function deleteChoices(credentials: Credential[], digest: (email: string) => string | null) {
+export function deleteChoices({ credentials, digest }: { credentials: Credential[]; digest: (email: Email) => string | null }) {
   return [
-    ...credentials.map((credential) => ({
-      value: credential as Credential | null,
+    ...credentials.map<Choice<Credential | null>>((credential) => ({
+      value: credential,
       name: maskEmail(credential.email),
       ...(digest(credential.email) === null ? { description: '账号库中的凭证文件缺失或损坏' } : {}),
     })),
@@ -211,7 +209,7 @@ export function deleteChoices(credentials: Credential[], digest: (email: string)
   ];
 }
 
-export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json') {
+export function addChoices({ current, authPath = '~/.codex/auth.json' }: { current: CurrentLogin; authPath?: string | undefined }): (Choice<AddSource> | Separator)[] {
   const codexDescription =
     current.status === 'none'
       ? `未找到 ${authPath}，请先在 Codex 中登录`
@@ -224,15 +222,15 @@ export function addChoices(current: CurrentLogin, authPath = '~/.codex/auth.json
             : `${authPath}${current.email === null ? '' : ` · ${maskEmail(current.email)}`}`;
   return [
     {
-      value: 'codex' as AddSource,
+      value: 'codex',
       name: '当前 Codex 登录',
       description: codexDescription,
       disabled: current.status === 'none' ? styleText('dim', '(未登录)') : current.status === 'invalid' ? styleText('dim', '(登录文件无效)') : false,
     },
-    { value: 'file' as AddSource, name: '其他文件…', description: '手动输入 auth.json 的路径' },
-    { value: 'browser' as AddSource, name: '浏览器登录', description: '通过服务端的官方 Codex CLI 登录 ChatGPT，添加后可选择切换' },
+    { value: 'file', name: '其他文件…', description: '手动输入 auth.json 的路径' },
+    { value: 'browser', name: '浏览器登录', description: '通过服务端的官方 Codex CLI 登录 ChatGPT，添加后可选择切换' },
     divider(),
-    { value: 'back' as AddSource, name: '返回', description: '回到主菜单' },
+    { value: 'back', name: '返回', description: '回到主菜单' },
   ];
 }
 
@@ -258,7 +256,10 @@ export function fitPath(path: string, columns: number): string {
   }
   const head = fit(path, Math.max(1, Math.floor(width / 3)));
   let tail = '';
-  while (points.length > 0 && displayWidth(head + points.at(-1)! + tail) <= width) tail = points.pop()! + tail;
+  for (const point of points.reverse()) {
+    if (displayWidth(head + point + tail) > width) break;
+    tail = point + tail;
+  }
   return head + tail;
 }
 
@@ -267,17 +268,17 @@ export function pathLabel(label: string, path: string, columns = process.stdout.
   return displayWidth(inline) <= columns ? inline : `${label}\n  ${fitPath(path, columns - 2)}`;
 }
 
-export function report(symbol: string, text: string, detail?: string): void {
-  console.log(`${line(symbol, text, detail)}\n`);
+export function report({ symbol, text, detail }: { symbol: string; text: string; detail?: string | undefined }): void {
+  writeOutput(`${line(symbol, text, detail)}\n`);
 }
 
 export function cancelled(): void {
-  console.log(line(styleText('dim', '·'), styleText('dim', '已取消。')));
+  writeOutput(line(styleText('dim', '·'), styleText('dim', '已取消。')));
 }
 
 const frames = unicode ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] : ['-', '\\', '|', '/'];
 
-export async function withSpinner<T>(text: string, task: () => Promise<T>): Promise<T> {
+export async function withSpinner<T>({ text, task }: { text: string; task: () => Promise<T> }): Promise<T> {
   const output = process.stdout;
   const input = process.stdin;
   const wasRaw = input.isRaw;

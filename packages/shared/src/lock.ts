@@ -20,13 +20,13 @@ function busy(error: unknown): boolean {
   return isRecord(error) && (error.code === 'EEXIST' || process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code)));
 }
 
-async function age(path: string, content: string | null): Promise<number> {
+async function age({ path, content }: { path: string; content: string | null }): Promise<number> {
   return Date.now() - ((content === null ? null : lockTime(content)) ?? (await stat(path)).mtimeMs);
 }
 
 async function reclaim(path: string): Promise<void> {
   const seen = await readOptional(path);
-  if (seen === null || await age(path, seen) <= 30_000) return;
+  if (seen === null || await age({ path, content: seen }) <= 30_000) return;
   const guard = `${path}.reclaim`;
   try {
     await (await open(guard, 'wx', 0o600)).close();
@@ -36,7 +36,7 @@ async function reclaim(path: string): Promise<void> {
   }
   try {
     const current = await readOptional(path);
-    if (current !== null && await age(path, current) > 30_000) await rm(path, { force: true });
+    if (current !== null && await age({ path, content: current }) > 30_000) await rm(path, { force: true });
   } finally {
     await rm(guard, { force: true });
   }
@@ -70,7 +70,7 @@ async function acquire(home: string): Promise<() => Promise<void>> {
   }
 }
 
-export async function withLock<T>(home: string, fn: () => Promise<T>): Promise<T> {
+export async function withLock<T>({ home, fn }: { home: string; fn: () => Promise<T> }): Promise<T> {
   const key = resolve(home);
   const operation = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
     const release = await acquire(key);

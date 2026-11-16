@@ -5,7 +5,7 @@ import { inputTheme } from './ui.js';
 import { fit, keyHelp, wrapWords } from './text-layout.js';
 import { glyph } from './terminal-symbols.js';
 
-type Result = { id: string } | { error: unknown } | null;
+type Result = { kind: 'complete'; id: Awaited<ReturnType<Session['browserLogin']>> } | { kind: 'error'; error: unknown } | null;
 interface BrowserView {
   url: string;
   manual: boolean;
@@ -60,8 +60,8 @@ export const browserLoginPrompt = createPrompt<Result, { store: Pick<Session, 'b
       try {
         const id = await store.browserLogin({ signal, onUrl: setUrl, onBrowserError: () => setManual(true) });
         if (signal.aborted) { await store.cancelBrowserLogin(id); done(null); }
-        else done({ id });
-      } catch (error) { done(signal.aborted ? null : { error }); }
+        else done({ kind: 'complete', id });
+      } catch (error) { done(signal.aborted ? null : { kind: 'error', error }); }
     })();
     return () => controller.current.abort();
   }, []);

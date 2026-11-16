@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { writeOutput } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { lstat, mkdtemp, rm } from 'node:fs/promises';
@@ -11,11 +13,8 @@ const prefix = join(temporary, 'prefix');
 const env = { ...process.env, CODEX_HOME: join(temporary, 'codex') };
 const npm = (args: string[], cwd = temporary) => execFileSync(process.execPath, [npmCli, ...args], { cwd, env, encoding: 'utf8' }).trim();
 try {
-  const packages = JSON.parse(npm(['pack', '--workspaces', '--json', '--pack-destination', temporary], process.cwd())) as {
-    name: string;
-    filename: string;
-    files: { path: string }[];
-  }[];
+  const packages = z.array(z.object({ name: z.string(), filename: z.string(), files: z.array(z.object({ path: z.string() })) }))
+    .parse(JSON.parse(npm(['pack', '--workspaces', '--json', '--pack-destination', temporary], process.cwd())));
   for (const packed of packages) {
     assert.ok(packed.files.some((file) => file.path.startsWith('dist/')), `${packed.name} 缺少构建产物，请先运行 npm run build。`);
     assert.ok(packed.files.every((file) => file.path === 'package.json' || file.path.startsWith('dist/') || /^(?:README|LICENSE)/u.test(file.path)), `${packed.name} 包含非发布文件。`);
@@ -29,7 +28,7 @@ try {
   assert.match(run('@weiguangchao/codexplus', ['--help']), /codexplus status/u);
   assert.match(run('@weiguangchao/codexplus-server', ['--help']), /codexplus-server/u);
   assert.match(run('@weiguangchao/codexplus', ['status', '--home', join(temporary, 'data')]), /数据目录/u);
-  console.log('发布包安装验证通过：独立安装三个 tarball，客户端与服务端可启动。');
+  writeOutput('发布包安装验证通过：独立安装三个 tarball，客户端与服务端可启动。');
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }

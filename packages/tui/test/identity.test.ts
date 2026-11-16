@@ -1,3 +1,4 @@
+import { parseRpcCall } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -16,8 +17,8 @@ test('服务名或协议版本不匹配时只做健康检查，旧远程令牌�
     assert.equal(request.url, '/rpc');
     assert.equal(request.method, 'POST');
     const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(Buffer.from(chunk as Buffer));
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    for await (const chunk of request) { assert.ok(Buffer.isBuffer(chunk)); chunks.push(chunk); }
+    const body = parseRpcCall(Buffer.concat(chunks).toString('utf8'));
     methods.push(body.method);
     if (request.headers.authorization) tokens.push(request.headers.authorization);
     response.setHeader('Content-Type', 'application/json');
@@ -43,7 +44,7 @@ test('服务名或协议版本不匹配时只做健康检查，旧远程令牌�
   health.version = protocolVersion;
   const session = await client.connect(options);
   await session.close();
-  assert.deepEqual(methods, [...Array(4).fill('health'), 'login.info']);
+  assert.deepEqual(methods, [...Array.from({ length: 4 }, () => 'health'), 'login.info']);
   assert.equal(await readFile(join(client.home, 'client.json'), 'utf8'), before);
   assert.deepEqual(tokens, []);
 });
@@ -64,6 +65,6 @@ test('本机服务端的重定向不会被跟随，也不改写客户端配置',
   await assert.rejects(client.connect({ port: address.port }), /无法连接/u);
   assert.deepEqual(paths, ['/rpc']);
   await assert.rejects(readFile(join(client.home, 'client.json')), { code: 'ENOENT' });
-  await assert.rejects(requestService(`http://127.0.0.1:${address.port}`, 'credentials.upload', { auth: { tokens: { access_token: 'secret' } }, base: null }), /无法连接/u);
+  await assert.rejects(requestService({ url: `http://127.0.0.1:${address.port}`, method: 'credentials.upload', params: { auth: { tokens: { access_token: 'secret' } }, base: null } }), /无法连接/u);
   assert.deepEqual(paths, ['/rpc', '/rpc']);
 });

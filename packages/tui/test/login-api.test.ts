@@ -1,9 +1,10 @@
+import { parseRpcCall } from '../../shared/test/helpers.js';
+import { parseAuth, parseEmail, writeAtomic } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { startServer } from '@weiguangchao/codexplus-server';
-import { writeAtomic } from '@weiguangchao/codexplus-shared';
 import { CredentialClient } from '../src/client.js';
 import { confirmRunningCodex, switchCredential } from '../src/switch.js';
 import { account, temporaryHome } from './helpers.js';
@@ -20,9 +21,9 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
   const codexHome = join(root, 'server-codex');
   const clientHome = join(root, 'client-data');
   const clientAuth = join(root, 'client-codex', 'auth.json');
-  await writeAtomic(join(codexHome, 'auth.json'), auth('server-secret'));
-  await writeAtomic(clientAuth, auth('client-must-stay'));
-  await writeAtomic(join(userHome, 'import.json'), auth('import-secret', '2026-11-10T00:00:00Z'));
+  await writeAtomic({ path: join(codexHome, 'auth.json'), content: auth('server-secret') });
+  await writeAtomic({ path: clientAuth, content: auth('client-must-stay') });
+  await writeAtomic({ path: join(userHome, 'import.json'), content: auth('import-secret', '2026-11-10T00:00:00Z') });
   const server = await startServer({ home, userHome, codexHome, port: 0, accountRequest: account,
     findProcesses: async () => [{ pid: 7654, command: 'codex' }] });
   context.after(() => server.close());
@@ -42,17 +43,17 @@ test('TUI 只传操作参数，登录路径、文件导入、状态、进程和�
   const { credential } = await session.saveCurrent();
   await session.validateSource('~/import.json');
   session.confirmUpload = async () => true;
-  await session.add('~/import.json');
+  await session.add({ path: '~/import.json' });
   assert.deepEqual(await session.current(), { status: 'behind', email });
-  assert.deepEqual(await session.refreshTimes(email), { local: '2026-11-01T00:00:00Z', server: '2026-11-10T00:00:00Z' });
+  assert.deepEqual(await session.refreshTimes(parseEmail(email)), { local: '2026-11-01T00:00:00Z', server: '2026-11-10T00:00:00Z' });
   assert.equal(await confirmRunningCodex({ findProcesses: () => session.processes(), ask: async () => false, log: () => {} }), false);
-  assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'server-secret');
+  assert.equal(parseAuth(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'server-secret');
   await session.switch(credential);
-  assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'import-secret');
-  assert.equal(JSON.parse(await readFile(clientAuth, 'utf8')).tokens.access_token, 'client-must-stay');
+  assert.equal(parseAuth(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, 'import-secret');
+  assert.equal(parseAuth(await readFile(clientAuth, 'utf8')).tokens.access_token, 'client-must-stay');
   await assert.rejects(stat(clientHome), { code: 'ENOENT' });
   assert.ok(requests.every((request) => request.url.endsWith('/rpc')));
-  const methods = requests.map((request) => JSON.parse(request.body).method);
+  const methods = requests.map((request) => parseRpcCall(request.body).method);
   assert.ok(methods.includes('login.save'));
   assert.ok(methods.includes('login.switch'));
   assert.ok(!methods.includes('credentials.download'));
@@ -66,9 +67,9 @@ test('同步基线和删除记录在客户端换目录及服务端重启后仍�
   context.after(() => server.close());
   const client = new CredentialClient({ home: join(root, 'first-client') });
   const first = await client.connect({ port: Number(new URL(server.url).port) });
-  await writeAtomic(first.codexAuthPath, auth('first'));
+  await writeAtomic({ path: first.codexAuthPath, content: auth('first') });
   const { credential } = await first.saveCurrent();
-  await writeAtomic(first.codexAuthPath, auth('refreshed', '2026-11-10T00:00:00Z'));
+  await writeAtomic({ path: first.codexAuthPath, content: auth('refreshed', '2026-11-10T00:00:00Z') });
   await first.close();
   await server.close();
   server = await startServer(options);
@@ -91,10 +92,10 @@ test('损坏的服务端同步状态会阻止切换，当前登录保持原样',
   const server = await startServer({ home: root, userHome: root, codexHome: join(root, 'codex'), port: 0, accountRequest: account });
   context.after(() => server.close());
   const session = await new CredentialClient().connect({ port: Number(new URL(server.url).port) });
-  await writeAtomic(session.codexAuthPath, auth('original'));
+  await writeAtomic({ path: session.codexAuthPath, content: auth('original') });
   const { credential } = await session.saveCurrent();
   const before = await readFile(session.codexAuthPath, 'utf8');
-  await writeAtomic(join(root, 'login.json'), '{broken');
+  await writeAtomic({ path: join(root, 'login.json'), content: '{broken' });
   await assert.rejects(session.switch(credential), /格式无效/u);
   assert.equal(await readFile(session.codexAuthPath, 'utf8'), before);
 });
@@ -107,26 +108,26 @@ test('选择切换并重启时由服务端重启对应 CODEX_HOME，普通切换
   const server = await startServer({ home: join(root, 'vault'), userHome: root, codexHome, port: 0, accountRequest: account,
     restartServer: async (directory) => {
       assert.equal(directory, codexHome);
-      assert.equal(JSON.parse(await readFile(join(directory, 'auth.json'), 'utf8')).tokens.access_token, 'target');
+      assert.equal(parseAuth(await readFile(join(directory, 'auth.json'), 'utf8')).tokens.access_token, 'target');
       restarted++;
       if (failRestart) throw new Error('重启失败');
     } });
   context.after(() => server.close());
   const session = await new CredentialClient({ codexHome: join(root, 'client-codex') }).connect({ port: Number(new URL(server.url).port) });
-  await writeAtomic(session.codexAuthPath, auth('target'));
+  await writeAtomic({ path: session.codexAuthPath, content: auth('target') });
   const { credential } = await session.saveCurrent();
   const findProcesses = async () => [{ pid: 7654, command: 'codex' }];
   for (const decision of [false, true, 'restart'] as const) {
-    await writeAtomic(session.codexAuthPath, auth('original'));
-    await switchCredential(session, credential, { findProcesses, ask: async () => decision, log: () => {} });
-    assert.equal(JSON.parse(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, decision ? 'target' : 'original');
+    await writeAtomic({ path: session.codexAuthPath, content: auth('original') });
+    await switchCredential({ store: session, credential, options: { findProcesses, ask: async () => decision, log: () => {} } });
+    assert.equal(parseAuth(await readFile(session.codexAuthPath, 'utf8')).tokens.access_token, decision ? 'target' : 'original');
     assert.equal(restarted, decision === 'restart' ? 1 : 0);
   }
   failRestart = true;
-  await assert.rejects(switchCredential(session, credential, { findProcesses, ask: async () => 'restart', log: () => {} }), /重启失败/u);
+  await assert.rejects(switchCredential({ store: session, credential, options: { findProcesses, ask: async () => 'restart', log: () => {} } }), /重启失败/u);
   assert.equal(restarted, 2);
   assert.deepEqual(await session.current(), { status: 'saved', email });
   const before = restarted;
-  await assert.rejects(switchCredential(session, { type: 'codex', email: 'missing@example.com' }, { findProcesses, ask: async () => 'restart', log: () => {} }));
+  await assert.rejects(switchCredential({ store: session, credential: { type: 'codex', email: parseEmail('missing@example.com') }, options: { findProcesses, ask: async () => 'restart', log: () => {} } }));
   assert.equal(restarted, before);
 });

@@ -9,13 +9,13 @@ import { temporaryHome } from './helpers.js';
 test('残留锁回收，子进程并发读改写不丢失', async (context) => {
   const home = await temporaryHome(context);
   await writeFile(join(home, '.lock'), JSON.stringify({ time: Date.now() - 31_000 }));
-  await withLock(home, () => writeFile(join(home, 'count'), '0'));
+  await withLock({ home, fn: () => writeFile(join(home, 'count'), '0') });
   const code = `import { withLock } from ${JSON.stringify(new URL('../src/lock.ts', import.meta.url).href)};
 import { readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
-for (let i = 0; i < 30; i++) await withLock(${JSON.stringify(home)}, async () => {
+for (let i = 0; i < 30; i++) await withLock({ home: ${JSON.stringify(home)}, fn: async () => {
 const path = ${JSON.stringify(join(home, 'count'))};
 await writeFile(path, String(Number(await readFile(path, 'utf8')) + 1));
-});`;
+} });`;
   await Promise.all(Array.from({ length: 4 }, () => new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', code], { stdio: ['ignore', 'ignore', 'pipe'] });
     let error = '';
@@ -32,10 +32,10 @@ test('进程在写入锁内容前崩溃留下的空锁按文件时间回收，�
   await writeFile(path, '');
   const old = new Date(Date.now() - 31_000);
   await utimes(path, old, old);
-  assert.equal(await withLock(home, async () => 'ok'), 'ok');
+  assert.equal(await withLock({ home, fn: async () => 'ok' }), 'ok');
   assert.equal((await readdir(home)).includes('.lock'), false);
   await writeFile(path, '');
-  const waiting = withLock(home, async () => 'late');
+  const waiting = withLock({ home, fn: async () => 'late' });
   const winner = await Promise.race([waiting, new Promise((resolve) => setTimeout(() => resolve('still waiting'), 300))]);
   assert.equal(winner, 'still waiting');
   assert.equal(await readFile(path, 'utf8'), '');
@@ -52,7 +52,7 @@ test('回收残留锁时互斥：回收标记存在时不回收也不删除标�
   await writeFile(guard, '');
   const old = new Date(Date.now() - 31_000);
   await utimes(guard, old, old);
-  const waiting = withLock(home, async () => 'acquired');
+  const waiting = withLock({ home, fn: async () => 'acquired' });
   const first = await Promise.race([waiting, new Promise((resolve) => setTimeout(() => resolve('still waiting'), 300))]);
   assert.equal(first, 'still waiting');
   assert.equal(await readFile(path, 'utf8'), stale);

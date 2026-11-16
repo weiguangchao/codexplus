@@ -25,11 +25,11 @@ export function parseCommand(args: string[]): Command {
   if (args[0] === 'serve') {
     throw new Error('服务端已改为独立命令 codexplus-server，请运行 codexplus-server --help。');
   }
-  const { values, positionals } = parseOptions('codexplus', args, {
+  const { values, positionals } = parseOptions({ program: 'codexplus', args, options: {
     home: { type: 'string' },
     port: { type: 'string' },
     help: { type: 'boolean', short: 'h' },
-  });
+  } });
   if (values.help) {
     return { kind: 'help' };
   }

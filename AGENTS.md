@@ -1,5 +1,9 @@
 # codexplus
 
+## Preferences
+
+- Use **typescript-best-practices** skill when reading or editing any .ts or .tsx file.
+
 ## Layout
 
 - npm workspaces monorepo. `packages/tui` is the client (`codexplus`), `packages/app-server` is the server (`codexplus-server`), `packages/shared` holds code both sides use.

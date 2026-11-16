@@ -30,6 +30,7 @@
     "codexplus-server": "dist/cli.js"
   },
   "dependencies": {
-    "@weiguangchao/codexplus-shared": "0.1.0"
+    "@weiguangchao/codexplus-shared": "0.1.0",
+    "zod": "^4.6.7"
   }
 }

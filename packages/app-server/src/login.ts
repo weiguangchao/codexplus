@@ -1,18 +1,15 @@
-import { isRecord } from '@weiguangchao/codexplus-shared';
+import { z } from 'zod';
+import { emailSchema } from '@weiguangchao/codexplus-shared';
+import type { Auth, Email } from '@weiguangchao/codexplus-shared';
 
-export function idTokenEmail(content: string): string | null {
+const claimsSchema = z.object({ email: z.string().trim().pipe(emailSchema) });
+
+export function idTokenEmail(auth: Auth): Email | null {
+  if (typeof auth.tokens.id_token !== 'string') return null;
+  const payload = auth.tokens.id_token.split('.')[1];
+  if (!payload) return null;
   try {
-    const auth: unknown = JSON.parse(content);
-    if (!isRecord(auth) || !isRecord(auth.tokens) || typeof auth.tokens.id_token !== 'string') {
-      return null;
-    }
-    const payload = auth.tokens.id_token.split('.')[1];
-    if (!payload) {
-      return null;
-    }
-    const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return isRecord(claims) && typeof claims.email === 'string' && claims.email.trim() ? claims.email.trim() : null;
-  } catch {
-    return null;
-  }
+    const claims = claimsSchema.safeParse(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')));
+    return claims.success ? claims.data.email : null;
+  } catch { return null; }
 }

@@ -1,13 +1,13 @@
+import { parseAuth, parseEmail, authDigest } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
-import { authDigest } from '@weiguangchao/codexplus-shared';
 import { CredentialStore } from '../src/store.js';
 import { temporaryHome } from './helpers.js';
 
-const credential = { type: 'codex', email: 'person@example.com' } as const;
+const credential = { type: 'codex', email: parseEmail('person@example.com') } as const;
 const content = '{\n  "tokens": { "access_token": "legacy", "refresh_token": "keep" },\n  "last_refresh": "2026-11-01T00:00:00Z"\n}\n';
 
 async function legacyStore(context: TestContext) {
@@ -25,16 +25,16 @@ async function legacyStore(context: TestContext) {
 test('读取旧凭证时迁移到账号目录，保留原内容、摘要和索引', async (context) => {
   const { store, legacy, directory, destination } = await legacyStore(context);
   const config = await readFile(store.configPath, 'utf8');
-  assert.deepEqual(await store.snapshots(), [{ ...credential, digest: authDigest(content), lastRefresh: '2026-11-01T00:00:00Z' }]);
+  assert.deepEqual(await store.snapshots(), [{ ...credential, digest: authDigest(parseAuth(content)), lastRefresh: '2026-11-01T00:00:00Z' }]);
   assert.equal(await readFile(destination, 'utf8'), content);
   await assert.rejects(stat(legacy), { code: 'ENOENT' });
-  assert.equal(await store.get(credential), content);
+  assert.deepEqual(await store.get(credential), parseAuth(content));
   assert.equal(await readFile(store.configPath, 'utf8'), config);
   if (process.platform !== 'win32') {
     assert.equal((await stat(destination)).mode & 0o777, 0o600);
     assert.equal((await stat(directory)).mode & 0o777, 0o700);
   }
-  await store.delete(credential, authDigest(content));
+  await store.delete({ credential, base: authDigest(parseAuth(content)) });
   assert.deepEqual(await readdir(store.credentialsPath), []);
 });
 
@@ -44,7 +44,7 @@ test('新旧路径同时存在时保留新文件，移除旧文件且不重复�
   await mkdir(directory);
   await writeFile(destination, newer);
   const before = await stat(destination);
-  assert.equal(await store.get(credential), newer);
+  assert.deepEqual(await store.get(credential), parseAuth(newer));
   assert.equal((await stat(destination)).mtimeMs, before.mtimeMs);
   await assert.rejects(stat(legacy), { code: 'ENOENT' });
 });
@@ -54,7 +54,7 @@ test('损坏的旧凭证迁移后仍可按 null 摘要删除', async (context) =
   await writeFile(legacy, '{broken');
   assert.deepEqual(await store.snapshots(), [{ ...credential, digest: null, lastRefresh: null }]);
   assert.equal(await readFile(destination, 'utf8'), '{broken');
-  await store.delete(credential, null);
+  await store.delete({ credential, base: null });
   assert.deepEqual(await readdir(store.credentialsPath), []);
 });
 

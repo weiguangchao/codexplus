@@ -1,3 +1,4 @@
+import { expectValue } from '../../shared/test/helpers.js';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
@@ -27,7 +28,7 @@ test('长登录链接不会挤掉状态与取消操作，完整链接逐页无�
         const parts: string[] = [];
         for (let scroll = 0; scroll <= layout.end; scroll++) {
           const current = browserLayout({ ...state, scroll }, columns, rows);
-          parts.push(scroll === 0 ? current.body.join('') : current.body.at(-1)!);
+          parts.push(scroll === 0 ? current.body.join('') : expectValue(current.body.at(-1)));
         }
         assert.equal(parts.join(''), url);
       }
@@ -46,7 +47,7 @@ test('浏览器等待可打开完整链接、跳到末尾、回到状态并取�
     browserLogin: async ({ signal, onUrl, onBrowserError }) => {
       onUrl(url);
       onBrowserError();
-      return await new Promise<string>((_resolve, reject) => {
+      return await new Promise<never>((_resolve, reject) => {
         signal.addEventListener('abort', () => { cancelled = true; reject(signal.reason); }, { once: true });
       });
     },

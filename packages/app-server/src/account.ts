@@ -1,11 +1,11 @@
-import { credentialDirectory, isRecord } from '@weiguangchao/codexplus-shared';
-import type { AuthTokens } from '@weiguangchao/codexplus-shared';
+import { z } from 'zod';
+import { parseEmail } from '@weiguangchao/codexplus-shared';
+import type { AuthTokens, Credential } from '@weiguangchao/codexplus-shared';
 
-export interface Account {
-  email: string;
-}
+export type Account = Pick<Credential, 'email'>;
+const accountSchema = z.object({ email: z.string() }).transform(({ email }) => ({ email: parseEmail(email.trim()) }));
 
-export async function lookupAccount(tokens: AuthTokens, request: typeof fetch = fetch): Promise<Account> {
+export async function lookupAccount({ tokens, request = fetch }: { tokens: AuthTokens; request?: typeof fetch | undefined }): Promise<Account> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${tokens.access_token}`,
     Accept: 'application/json',
@@ -38,11 +38,7 @@ export async function lookupAccount(tokens: AuthTokens, request: typeof fetch = 
   } catch {
     throw new Error('ChatGPT 账号接口未返回有效的 JSON 数据。');
   }
-  if (!isRecord(account) || typeof account.email !== 'string') {
-    throw new Error('ChatGPT 账号接口未返回邮箱，未保存凭证。');
-  }
-
-  const email = account.email.trim();
-  credentialDirectory(email);
-  return { email };
+  const parsed = accountSchema.safeParse(account);
+  if (!parsed.success) throw new Error('ChatGPT 账号接口未返回邮箱，未保存凭证。');
+  return parsed.data;
 }

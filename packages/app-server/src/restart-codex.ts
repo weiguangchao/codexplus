@@ -7,9 +7,9 @@ const execute = promisify(execFile);
 
 export async function restartCodexServer(codexHome: string): Promise<void> {
   const env = { ...process.env, CODEX_HOME: codexHome };
-  const command = await codexCommand(env);
+  const [command, ...args] = await codexCommand({ env });
   try {
-    const { stdout } = await execute(command[0]!, [...command.slice(1), 'app-server', 'daemon', 'restart'], {
+    const { stdout } = await execute(command, [...args, 'app-server', 'daemon', 'restart'], {
       env,
       encoding: 'utf8',
       timeout: 330_000,

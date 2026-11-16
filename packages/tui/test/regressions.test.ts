@@ -1,15 +1,15 @@
+import { parseEmail, readOptional } from '@weiguangchao/codexplus-shared';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CredentialClient } from '../src/client.js';
-import { readOptional } from '@weiguangchao/codexplus-shared';
 import { usage } from '../src/options.js';
 import { startServer } from '@weiguangchao/codexplus-server';
 import { addChoices, mainChoices, renderStatus } from '../src/ui.js';
 import { account, makeClient, temporaryHome } from './helpers.js';
 
-const email = 'person@example.com';
+const email = parseEmail('person@example.com');
 const idToken = `h.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.s`;
 const login = JSON.stringify({ tokens: { access_token: 'fake-access', id_token: idToken } });
 
@@ -27,7 +27,7 @@ test('CP-008 CODEX_HOME 中的登录可识别、上传和切换，默认文件�
   assert.equal(session.codexAuthPath, join(custom, 'auth.json'));
   assert.deepEqual(await session.current(), { status: 'unsaved', email });
   assert.equal(await readOptional(join(userHome, '.codex', 'auth.json')), null);
-  const { credential } = await session.add(session.codexAuthPath);
+  const { credential } = await session.add({ path: session.codexAuthPath });
   await mkdir(join(userHome, '.codex'));
   const fallback = '{not-json-default-must-stay';
   await writeFile(join(userHome, '.codex', 'auth.json'), fallback);
@@ -54,7 +54,7 @@ test('CP-008 空环境变量回退默认目录，~/ 路径按服务端用户目�
 
 test('CP-009 无效登录引导添加有效凭证，禁止保存无效文件', async (context) => {
   const userHome = await temporaryHome(context);
-  const { client } = makeClient(context, userHome);
+  const { client } = makeClient({ context, userHome });
   const session = await client.connect();
   assert.deepEqual(await session.current(), { status: 'none' });
   await mkdir(join(userHome, '.codex'));
@@ -62,11 +62,11 @@ test('CP-009 无效登录引导添加有效凭证，禁止保存无效文件', a
     await writeFile(session.codexAuthPath, content);
     const current = await session.current();
     assert.equal(current.status, 'invalid');
-    assert.equal(mainChoices([], current).default, 'add');
+    assert.equal(mainChoices({ credentials: [], current }).default, 'add');
     assert.match(renderStatus(current, 0), /登录文件无效.*[\s\S]*重新登录/u);
-    const source = addChoices(current)[0];
+    const source = addChoices({ current })[0];
     assert.ok(source && 'disabled' in source && source.disabled);
-    await assert.rejects(session.add(session.codexAuthPath));
+    await assert.rejects(session.add({ path: session.codexAuthPath }));
     assert.equal(await readFile(session.codexAuthPath, 'utf8'), content);
     assert.deepEqual(await session.list(), []);
   }
@@ -81,10 +81,10 @@ test('CP-009 无效登录引导添加有效凭证，禁止保存无效文件', a
 test('CP-008 与 CP-014 提示使用实际登录路径，帮助提前说明登录类型', () => {
   const path = '/custom codex/auth.json';
   assert.match(renderStatus({ status: 'none' }, 0, path), /未找到登录文件：[\s\S]*\/custom codex\/auth.json/u);
-  const source = addChoices({ status: 'unsaved', email }, path)[0];
+  const source = addChoices({ current: { status: 'unsaved', email }, authPath: path })[0];
   assert.ok(source && 'description' in source);
   assert.equal(source.description, `${path} · pe***on@e***`);
-  const choices = mainChoices([{ type: 'codex', email }], { status: 'behind', email }, path).choices;
+  const choices = mainChoices({ credentials: [{ type: 'codex', email }], current: { status: 'behind', email }, authPath: path }).choices;
   assert.ok(choices.some((choice) => 'description' in choice && choice.description?.includes(path)));
   assert.match(usage, /仅支持 ChatGPT 登录凭证.*API key/u);
   assert.match(usage, /CODEX_HOME/u);

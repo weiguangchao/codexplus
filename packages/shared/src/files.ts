@@ -15,7 +15,7 @@ export async function readOptional(path: string): Promise<string | null> {
   }
 }
 
-export async function writeAtomic(path: string, content: string): Promise<void> {
+export async function writeAtomic({ path, content }: { path: string; content: string }): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {
@@ -32,7 +32,7 @@ export async function writeAtomic(path: string, content: string): Promise<void> 
   }
 }
 
-export function expandPath(home: string, path: string): string {
+export function expandPath({ home, path }: { home: string; path: string }): string {
   let trimmed = path.trim();
   const quote = trimmed[0];
   if (trimmed.length >= 2 && (quote === '"' || quote === "'") && trimmed.endsWith(quote)) {

@@ -1,29 +1,29 @@
+import { z } from 'zod';
+import { writeOutput } from '@weiguangchao/codexplus-shared';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-interface Manifest {
-  name: string;
-  version: string;
-  workspaces?: string[];
-  dependencies?: Record<string, string>;
-}
+export const manifestSchema = z.looseObject({
+  name: z.string(), version: z.string(), private: z.boolean().optional(),
+  workspaces: z.array(z.string()).optional(), dependencies: z.record(z.string(), z.string()).optional(),
+});
+export const lockfileSchema = z.looseObject({
+  version: z.string(), packages: z.record(z.string(), z.looseObject({
+    version: z.string().optional(), dependencies: z.record(z.string(), z.string()).optional(),
+  })),
+});
 
-interface Lockfile {
-  version: string;
-  packages: Record<string, Manifest>;
-}
-
-export async function prepareRelease(root: string, tag: string): Promise<string> {
+export async function prepareRelease({ root, tag }: { root: string; tag: string }): Promise<string> {
   if (!/^v0\.1\.(0|[1-9]\d*)$/u.test(tag) || !Number.isSafeInteger(Number(tag.slice(5)))) {
     throw new Error('发布标签必须为 v0.1.x，x 为不带前导零的非负整数。');
   }
   const version = tag.slice(1);
-  const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as Manifest;
-  const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8')) as Lockfile;
+  const manifest = manifestSchema.parse(JSON.parse(await readFile(join(root, 'package.json'), 'utf8')));
+  const lock = lockfileSchema.parse(JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8')));
   const workspaces = await Promise.all((manifest.workspaces ?? []).map(async (directory) => ({
     directory,
-    manifest: JSON.parse(await readFile(join(root, directory, 'package.json'), 'utf8')) as Manifest,
+    manifest: manifestSchema.parse(JSON.parse(await readFile(join(root, directory, 'package.json'), 'utf8'))),
   })));
   const names = new Set(workspaces.map((entry) => entry.manifest.name));
   const entries = [{ directory: '', manifest }, ...workspaces];
@@ -34,7 +34,7 @@ export async function prepareRelease(root: string, tag: string): Promise<string>
     locked.version = version;
     for (const name of Object.keys(entry.manifest.dependencies ?? {})) {
       if (names.has(name)) {
-        entry.manifest.dependencies![name] = version;
+        entry.manifest.dependencies = { ...entry.manifest.dependencies, [name]: version };
         locked.dependencies = { ...locked.dependencies, [name]: version };
       }
     }
@@ -48,5 +48,5 @@ export async function prepareRelease(root: string, tag: string): Promise<string>
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  console.log(`发布版本：${await prepareRelease(process.cwd(), process.argv[2] ?? '')}`);
+  writeOutput(`发布版本：${await prepareRelease({ root: process.cwd(), tag: process.argv[2] ?? '' })}`);
 }

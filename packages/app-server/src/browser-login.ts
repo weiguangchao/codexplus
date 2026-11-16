@@ -1,3 +1,5 @@
+import type { Auth } from '@weiguangchao/codexplus-shared';
+import { z } from 'zod';
 import { execFile, spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -16,7 +18,10 @@ interface LoginOptions {
   timeoutMs?: number;
 }
 
-export async function codexCommand(env: NodeJS.ProcessEnv, platform = process.platform): Promise<string[]> {
+const completionSchema = z.object({ loginId: z.string(), success: z.boolean() });
+type LoginCompletion = z.infer<typeof completionSchema>;
+
+export async function codexCommand({ env, platform = process.platform }: { env: NodeJS.ProcessEnv; platform?: NodeJS.Platform | undefined }): Promise<[string, ...string[]]> {
   if (platform !== 'win32') return ['codex'];
   const path = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '';
   const require = createRequire(import.meta.url);
@@ -42,7 +47,7 @@ export function openBrowser(url: string): Promise<void> {
   });
 }
 
-export async function browserLogin(options: LoginOptions = {}): Promise<string> {
+export async function browserLogin(options: LoginOptions = {}): Promise<Auth> {
   const directory = await mkdtemp(join(tmpdir(), 'codexplus-login-'));
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
@@ -52,9 +57,13 @@ export async function browserLogin(options: LoginOptions = {}): Promise<string> 
   try {
     signal.throwIfAborted();
     const env = { ...process.env, CODEX_HOME: directory };
-    const command = options.launch ? [] : await codexCommand(env);
+    const launch = async () => {
+      const [command, ...args] = await codexCommand({ env });
+      signal.throwIfAborted();
+      return spawn(command, [...args, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'], { env, cwd: directory, windowsHide: true });
+    };
     signal.throwIfAborted();
-    const processChild = options.launch ? options.launch(env) : spawn(command[0]!, [...command.slice(1), 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"'], { env, cwd: directory, windowsHide: true });
+    const processChild = options.launch ? options.launch(env) : await launch();
     const exited = new Promise<void>((resolve) => processChild.once('close', () => resolve()));
     stop = async () => {
       processChild.stdin.end();
@@ -66,10 +75,8 @@ export async function browserLogin(options: LoginOptions = {}): Promise<string> 
     let loginId = '';
     let failed: Error | undefined;
     const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-    const completions = new Map<string, Record<string, unknown>>();
-    let finish: (value: Record<string, unknown>) => void;
-    let failLogin: (error: Error) => void;
-    const completed = new Promise<Record<string, unknown>>((resolve, reject) => { finish = resolve; failLogin = reject; });
+    const completions = new Map<string, LoginCompletion>();
+    const { promise: completed, resolve: finish, reject: failLogin } = Promise.withResolvers<LoginCompletion>();
     void completed.catch(() => {});
     const fail = (error: Error) => {
       failed ??= error;
@@ -89,8 +96,10 @@ export async function browserLogin(options: LoginOptions = {}): Promise<string> 
         if (message.error) request.reject(new Error('Codex 无法启动浏览器登录，请升级 CLI 并检查回调端口是否被其他登录流程占用。'));
         else request.resolve(message.result);
       } else if (message.method === 'account/login/completed' && isRecord(message.params) && typeof message.params.loginId === 'string') {
-        if (message.params.loginId === loginId) finish(message.params);
-        else if (!loginId) completions.set(message.params.loginId, message.params);
+        const result = completionSchema.safeParse(message.params);
+        if (!result.success) { fail(new Error('Codex 登录完成通知格式无效。')); return; }
+        if (result.data.loginId === loginId) finish(result.data);
+        else if (!loginId) completions.set(result.data.loginId, result.data);
       }
     });
     processChild.stderr.resume();
@@ -120,7 +129,8 @@ export async function browserLogin(options: LoginOptions = {}): Promise<string> 
     loginId = result.loginId;
     const url = new URL(result.authUrl);
     if (url.protocol !== 'https:') throw new Error('Codex 返回的登录链接无效。');
-    if (completions.has(loginId)) finish!(completions.get(loginId)!);
+    const early = completions.get(loginId);
+    if (early) finish(early);
     options.onUrl?.(url.href);
     signal.throwIfAborted();
     void (options.open ?? openBrowser)(url.href).catch(() => { if (!signal.aborted) options.onBrowserError?.(); });
@@ -130,7 +140,7 @@ export async function browserLogin(options: LoginOptions = {}): Promise<string> 
     const content = await readFile(join(directory, 'auth.json'), 'utf8').catch(() => { throw new Error('Codex 未生成可导入的文件凭证，请检查 CLI 的凭证存储策略。'); });
     const auth = parseAuth(content);
     signal.throwIfAborted();
-    return JSON.stringify(auth);
+    return auth;
   } finally {
     clearTimeout(timer);
     cancel?.();

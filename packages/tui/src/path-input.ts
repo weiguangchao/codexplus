@@ -5,7 +5,7 @@ import { stepTitle } from './screens.js';
 import { displayWidth, keyHelp, wrapWords } from './text-layout.js';
 import { glyph } from './terminal-symbols.js';
 
-export function pathWindow(value: string, cursor: number, columns: number): { text: string; cursor: number } {
+export function pathWindow({ value, cursor, columns }: { value: string; cursor: number; columns: number }): { text: string; cursor: number } {
   const points = Array.from(value);
   const position = Math.max(0, Math.min(cursor, points.length));
   const width = Math.max(1, columns - 1);
@@ -13,9 +13,21 @@ export function pathWindow(value: string, cursor: number, columns: number): { te
   let start = position;
   let end = position;
   let used = 0;
-  while (start > 0 && used + displayWidth(points[start - 1]!) <= Math.floor(width * 2 / 3) - 1) used += displayWidth(points[--start]!);
-  while (end < points.length && used + displayWidth(points[end]!) <= width - 2) used += displayWidth(points[end++]!);
-  while (start > 0 && used + displayWidth(points[start - 1]!) <= width - 2) used += displayWidth(points[--start]!);
+  for (const point of points.slice(0, start).reverse()) {
+    const size = displayWidth(point);
+    if (used + size > Math.floor(width * 2 / 3) - 1) break;
+    start--; used += size;
+  }
+  for (const point of points.slice(end)) {
+    const size = displayWidth(point);
+    if (used + size > width - 2) break;
+    end++; used += size;
+  }
+  for (const point of points.slice(0, start).reverse()) {
+    const size = displayWidth(point);
+    if (used + size > width - 2) break;
+    start--; used += size;
+  }
   const prefix = start > 0 ? glyph.left : '';
   return { text: prefix + points.slice(start, end).join('') + (end < points.length ? glyph.right : ''), cursor: prefix.length + points.slice(start, position).join('').length };
 }
@@ -33,7 +45,7 @@ export const pathInput = createPrompt<string, PathConfig>((config, done) => {
   const prefix = usePrefix({ status, theme: makeTheme(inputTheme) });
   const update = (value: string, cursor: number, rl: { line: string }) => {
     state.current = { value, cursor };
-    const next = pathWindow(value, cursor, process.stdout.columns || 80);
+    const next = pathWindow({ value, cursor, columns: process.stdout.columns || 80 });
     Object.assign(rl, { line: next.text, cursor: next.cursor });
     setView(next);
   };
@@ -72,7 +84,7 @@ export const pathInput = createPrompt<string, PathConfig>((config, done) => {
     } else if (key.name === 'backspace') { if (cursor > 0) points.splice(--cursor, 1); }
     else if (key.name === 'delete') points.splice(cursor, 1);
     else if (!key.ctrl && !meta && sequence && !sequence.startsWith('\x1b')) {
-      const added = Array.from(sequence).filter((point) => point.codePointAt(0)! >= 32 && point !== '\x7f');
+      const added = Array.from(sequence).filter((point) => point.charCodeAt(0) >= 32 && point !== '\x7f');
       points.splice(cursor, 0, ...added); cursor += added.length;
     }
     update(points.join(''), cursor, rl);

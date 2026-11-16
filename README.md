@@ -258,7 +258,7 @@ npm run check
 npm run test:package
 ```
 
-`check` 运行 ESLint、TypeScript 类型检查、测试和构建。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
+`check` 运行 ESLint、TypeScript 类型检查、测试和构建。 领域类型由 Zod schema 推导，文件和 RPC 数据在入口解析；邮箱、凭证摘要和不同用途的 ID 使用独立品牌类型。ESLint 拒绝不安全的 `any` 传播、不安全类型断言、非空断言、遗漏联合分支和 `console` 输出，CLI 输出通过标准输出函数，诊断使用结构化记录。ESLint 限制每个 JavaScript / TypeScript 文件最多 500 行（包含空行），并强制禁止行注释、块注释和 JSDoc；可执行文件的 shebang 不属于代码注释。
 
 可运行 `npm run release:prepare -- v0.1.1` 在本机验证版本同步；此命令会修改根包、工作区包及 lockfile，正式发布由工作流在临时检出目录内完成。
 

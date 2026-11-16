@@ -1,3 +1,4 @@
+import type { Email, UploadConflict } from '@weiguangchao/codexplus-shared';
 import { select } from './select.js';
 import { emitKeypressEvents } from 'node:readline';
 import { maskEmail, refreshDetails, selectTheme } from './ui.js';
@@ -45,21 +46,21 @@ export function isCancel(error: unknown): boolean {
   return error instanceof Error && (error.name === 'ExitPromptError' || error.name === 'AbortPromptError');
 }
 
-export async function confirmUpload(details: Record<string, unknown>): Promise<boolean> {
-  const answer = await escapable((context) => select({
-    message: stepTitle('添加账号 / 确认覆盖', `账号库已保存 ${maskEmail(String(details.email))}，内容不同`, `  ${refreshDetails(details.localRefresh, details.lastRefresh, '本次上传的')}`),
+export async function confirmUpload(details: UploadConflict): Promise<boolean> {
+  const answer = await escapable((context) => select({ config: {
+    message: stepTitle('添加账号 / 确认覆盖', `账号库已保存 ${maskEmail(details.email)}，内容不同`, `  ${refreshDetails(details.localRefresh, details.lastRefresh, '本次上传的')}`),
     choices: [
       { value: false, name: '返回', description: '不做更改' },
       { value: true, name: '用本次上传覆盖服务端', tone: 'danger', description: '服务端保存的版本将被替换，无法恢复' },
     ],
     default: false,
     theme: selectTheme('返回'),
-  }, context));
+  }, context }));
   return answer === true;
 }
 
-export async function confirmRestore(email: string | null): Promise<boolean> {
-  const answer = await escapable((context) => select({
+export async function confirmRestore(email: Email | null): Promise<boolean> {
+  const answer = await escapable((context) => select({ config: {
     message: stepTitle('添加账号 / 确认恢复', email === null ? '无法识别账号，保存可能重新添加刚删除的账号。' : `重新保存刚删除的账号 ${maskEmail(email)}？`),
     choices: [
       { value: false, name: '取消', description: '保留删除结果，本机登录不变' },
@@ -67,6 +68,6 @@ export async function confirmRestore(email: string | null): Promise<boolean> {
     ],
     default: false,
     theme: selectTheme('取消'),
-  }, context));
+  }, context }));
   return answer === true;
 }
