@@ -95,6 +95,30 @@ test('损坏的服务端同步状态会阻止切换，当前登录保持原样',
   assert.equal(await readFile(session.codexAuthPath, 'utf8'), before);
 });
 
+test('未登录且账号库为空时可独立重启 Codex server，失败后可重试', async (context) => {
+  const root = await temporaryHome(context);
+  const codexHome = join(root, 'codex');
+  let fail = false;
+  const calls: string[] = [];
+  const server = await startServer({ home: join(root, 'vault'), userHome: root, codexHome, port: 0,
+    restartServer: async (directory) => {
+      calls.push(directory);
+      if (fail) throw new Error('重启失败');
+    },
+  });
+  context.after(() => server.close());
+  const session = await serverSession(server.url);
+  assert.deepEqual(await session.list(), []);
+  assert.deepEqual(await session.current(), { status: 'none' });
+  await session.restartCodexServer();
+  fail = true;
+  await assert.rejects(session.restartCodexServer(), /重启失败/u);
+  fail = false;
+  await session.restartCodexServer();
+  assert.deepEqual(calls, [codexHome, codexHome, codexHome]);
+  assert.deepEqual(await session.current(), { status: 'none' });
+});
+
 test('选择切换并重启时由服务端重启对应 CODEX_HOME，普通切换和取消不重启', async (context) => {
   const root = await temporaryHome(context);
   const codexHome = join(root, 'server-codex');
