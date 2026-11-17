@@ -349,6 +349,21 @@ async function switchTo({ store, credentials, target }: { store: Session; creden
   return 'done';
 }
 
+async function restartFlow({ store }: { store: Session }): Promise<void> {
+  const confirmed = await escapable((context) => select({ config: {
+    message: stepTitle('重启 codex server', '重启 Codex 托管后台服务？', '可能中断正在运行的任务。独立启动的会话仍需手动重启。'),
+    choices: [
+      { value: false, name: '取消', description: '回到主菜单' },
+      { value: true, name: '重启', tone: 'danger', description: '重启当前登录目录的 Codex server' },
+    ],
+    default: false,
+    theme: selectTheme('取消'),
+  }, context }));
+  if (confirmed !== true) return;
+  await withSpinner({ text: '正在重启 Codex server…', task: () => store.restartCodexServer() });
+  report({ symbol: symbols.success, text: '已重启 Codex server。' });
+}
+
 async function deleteFlow({ store, credentials, current }: { store: Session; credentials: Credential[]; current: CurrentLogin }): Promise<void> {
   const selected = await escapable((context) => select({ config: {
     message: stepTitle('删除账号', '选择要从账号库删除的账号', '下一步再次确认。本机登录会保留。'),
@@ -421,6 +436,8 @@ export async function menu({ store, version = '' }: { store: Session; version?: 
         await accountInfoFlow({ store });
       } else if (action === 'reset') {
         await resetCardFlow({ store, credentials, current });
+      } else if (action === 'restart') {
+        await restartFlow({ store });
       } else if (action === 'update') {
         if (current.status === 'behind') {
           await downloadCurrent({ store, email: current.email });

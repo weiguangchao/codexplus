@@ -95,6 +95,18 @@ test('主菜单在没有可切换账号或当前登录需要保存时默认添�
   assert.equal(describe(mainChoices({ credentials: [alice, bob], current: { status: 'saved', email: parseEmail('alice@example.com') } })), '从 1 个其他账号中选择一个');
 });
 
+test('重启 codex server 在未登录、登录无效或账号库为空时仍可用，快捷键不冲突', () => {
+  for (const current of [{ status: 'none' }, { status: 'invalid', reason: 'bad' }, { status: 'saved', email: alice.email }] as const) {
+    const choices = mainChoices({ credentials: [], current }).choices.filter((choice) => 'value' in choice);
+    const restart = choices.find((choice) => choice.value === 'restart');
+    assert.ok(restart);
+    assert.equal(restart.name, '重启 codex server');
+    assert.equal(restart.key, 'c');
+    assert.ok(!('disabled' in restart && restart.disabled));
+    assert.equal(new Set(choices.map((choice) => choice.key)).size, choices.length);
+  }
+});
+
 test('切换列表禁用当前账号并默认选中其他账号', () => {
   const menu = switchChoices({ credentials: [alice, bob], current: { status: 'saved', email: parseEmail('alice@example.com') } });
   assert.deepEqual(menu.default, bob);
