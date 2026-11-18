@@ -13,6 +13,7 @@ import { findCodexProcesses } from './processes.js';
 import { restartCodexServer } from './restart-codex.js';
 import { createOperations } from './operations.js';
 import { dispatchRpc, rpcError, RpcError } from './rpc.js';
+import { AntigravityLogins } from './antigravity.js';
 
 class HttpError extends ServiceError {}
 
@@ -51,7 +52,8 @@ export async function startServer({
   const store = new CredentialStore({ home, request: accountRequest });
   const current = new CurrentLoginStore({ store, home, userHome, codexHome });
   const browsers = new BrowserSessions(login);
-  const invoke = createOperations({ store, current, browsers, home, accountRequest, findProcesses, restartServer });
+  const antigravity = new AntigravityLogins({ home, userHome });
+  const invoke = createOperations({ store, current, browsers, antigravity, home, accountRequest, findProcesses, restartServer });
 
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     response.setHeader('Content-Type', 'application/json; charset=utf-8');

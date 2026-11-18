@@ -9,3 +9,4 @@ export * from './account-info.js';
 export * from './identity.js';
 export * from './session.js';
 export * from './output.js';
+export * from './antigravity.js';

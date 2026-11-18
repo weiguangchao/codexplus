@@ -9,6 +9,7 @@ import { pathInput } from './path-input.js';
 import { browserLoginPrompt } from './browser-prompt.js';
 import { resetCardFlow } from './reset-cards.js';
 import { accountInfoFlow } from './account-info.js';
+import { antigravityFlow } from './antigravity.js';
 import { homeSummary, locationSummary, renderHome, renderLocations, stepTitle } from './screens.js';
 import type { AuthDigest, Credential, CurrentLogin, Email } from '@weiguangchao/codexplus-shared';
 import { confirmRunningCodex } from './switch.js';
@@ -438,6 +439,8 @@ export async function menu({ store, version = '' }: { store: Session; version?: 
         await resetCardFlow({ store, credentials, current });
       } else if (action === 'restart') {
         await restartFlow({ store });
+      } else if (action === 'antigravity') {
+        await antigravityFlow(store);
       } else if (action === 'update') {
         if (current.status === 'behind') {
           await downloadCurrent({ store, email: current.email });

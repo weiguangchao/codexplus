@@ -1,4 +1,6 @@
 import {
+  antigravityAccountSchema,
+  antigravityStatusSchema,
   writeOutput,
   isRecord,
   parseAccountInfo,
@@ -18,6 +20,7 @@ import {
   protocolVersion,
   ServiceError,
 } from '@weiguangchao/codexplus-shared';
+import type { AntigravityAccount } from '@weiguangchao/codexplus-shared';
 import type { AccountInfo, AuthDigest, BrowserLoginId, Credential, CurrentLogin, Email, ResetCard, ResetCardId, ResetCardOutcome, ResetRequestId, SaveRequest, UploadConflict, UploadResult, RpcRequest } from '@weiguangchao/codexplus-shared';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
@@ -95,6 +98,22 @@ export class Session {
   }
 
   async validateSource(path: string): Promise<void> { await this.request({ method: 'credentials.validate', params: { path } }); }
+
+  async antigravityStatus() {
+    return antigravityStatusSchema.parse(await this.request({ method: 'antigravity.status' }));
+  }
+
+  async inspectAntigravity(path: string): Promise<AntigravityAccount> {
+    return antigravityAccountSchema.parse(await this.request({ method: 'antigravity.inspect', params: { path } }));
+  }
+
+  async saveAntigravity(params: { path?: string | undefined; sourceDigest: AuthDigest; base: AuthDigest | null }): Promise<void> {
+    await this.request({ method: 'antigravity.save', params });
+  }
+
+  async switchAntigravity(params: { account: AntigravityAccount; currentDigest: AuthDigest | null }): Promise<void> {
+    await this.request({ method: 'antigravity.switch', params });
+  }
 
   async add({ path, base, upload = (task) => task() }: { path: string; base?: AuthDigest | null | undefined; upload?: ((task: () => Promise<unknown>) => Promise<unknown>) | undefined }): Promise<UploadResult> {
     return await this.save({ request: { kind: 'credentials.import', path, ...(base === undefined ? {} : { base }) }, upload });

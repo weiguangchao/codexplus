@@ -83,6 +83,12 @@ TUI 不接受服务端端口或 URL，也不读取旧连接配置；服务端不
 
 选择「重启 codex server」（快捷键 `c`）可单独重启当前登录目录的 Codex 托管后台服务，无需切换账号或登录。确认页默认取消；确认重启后显示进度和结果，随后返回主菜单。使用与切换账号后重启相同的官方命令，独立启动的会话仍需手动重启。
 
+### Antigravity CLI
+
+在主菜单选择「Antigravity CLI」（快捷键 `g`），可以保存当前 `agy` 登录、从其他 `antigravity-oauth-token` 文件导入，或在已保存的账号之间切换。适用于 `agy` 使用文件存储的会话，例如走文件回退的 SSH 会话。菜单展示服务端用户的 `~/.gemini/antigravity-cli/antigravity-oauth-token`。若 `agy` 使用系统钥匙串，这个文件无法控制该会话的账号。存储行为见 [Antigravity 认证文档](https://antigravity.google/docs/install/?tab=cli)。
+
+保存和导入保留原始凭据文件，包括 `agy` 刷新登录需要的字段。账号标签来自文件中的邮箱，脱敏显示相同时会补充用于区分的前缀。每个账号的副本放在服务端 `<home>/credentials/antigravity/agy-<邮箱>/antigravity-oauth-token`，依赖文件权限保护。同一账号的内容变化时，覆盖副本前会要求确认。切换前请退出正在运行的 `agy`，切换后以文件模式启动。切换到另一个账号时，可以先保存尚未入库或已经变化的当前凭据。
+
 切换、删除和重置卡的账号列表支持直接输入显示的脱敏邮箱筛选，退格修改、Ctrl+U 清空；Home/End 到列表首尾，PageUp/PageDown 按当前显示页翻页。列表随终端尺寸调整，底部显示当前位置。短终端优先保留当前账号和额度数字，长说明、完整路径可按 Ctrl+O 或 F1 查看；非筛选菜单也支持 ?。方向键滚动，Enter 或 Esc 返回选项，再按 Esc 返回上一级。浏览器登录的长链接也可按 Ctrl+O 完整查看，等待状态始终显示，Esc 先返回登录页，再按 Esc 取消。不可用选项会显示原因，回车不会执行。
 
 长路径按终端宽度独立显示或保留首尾省略。路径输入框随光标横向滚动，`‹`、`›` 表示左右还有未显示的内容；完整路径仍用于编辑、校验和上传。支持方向键、Home/End、退格、Delete 和 Ctrl+U 清除光标左侧内容。
@@ -201,6 +207,10 @@ Codex 的存储方式说明见 [OpenAI 官方认证文档](https://developers.op
 | `credentials.delete` | 按 type、email、base（摘要或 null，必填）条件删除 |
 | `resetCards.list` | 按 type、email 查询所选账号可用的重置卡，不含凭证 |
 | `resetCards.use` | 按 type、email、cardId、requestId 使用指定卡片，返回 outcome |
+| `antigravity.status` | 当前 agy 文件路径、状态和已保存账号的元数据 |
+| `antigravity.inspect` | 校验 `path` 指定的 agy 文件并返回账号和摘要 |
+| `antigravity.save` | 按 `sourceDigest` 和 `base` 条件保存，省略 `path` 时保存当前 agy 文件 |
+| `antigravity.switch` | 按 `account`（email、digest）和 `currentDigest` 条件替换当前 agy 文件 |
 
 调用示例：
 
