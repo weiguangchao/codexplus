@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, rm, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { isRecord } from './auth.js';
 import { readOptional } from './files.js';
@@ -42,9 +42,8 @@ async function reclaim(path: string): Promise<void> {
   }
 }
 
-async function acquire(home: string): Promise<() => Promise<void>> {
-  await mkdir(home, { recursive: true, mode: 0o700 });
-  const path = join(home, '.lock');
+async function acquire(path: string): Promise<() => Promise<void>> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const started = Date.now();
   for (;;) {
     const content = JSON.stringify({ pid: process.pid, id: randomUUID(), time: Date.now() });
@@ -70,8 +69,8 @@ async function acquire(home: string): Promise<() => Promise<void>> {
   }
 }
 
-export async function withLock<T>({ home, fn }: { home: string; fn: () => Promise<T> }): Promise<T> {
-  const key = resolve(home);
+export async function withLock<T>({ home, name = '.lock', fn }: { home: string; name?: string; fn: () => Promise<T> }): Promise<T> {
+  const key = resolve(home, name);
   const operation = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
     const release = await acquire(key);
     try { return await fn(); } finally { await release(); }

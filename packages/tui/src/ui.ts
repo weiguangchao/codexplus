@@ -9,7 +9,7 @@ import type { Choice } from './select-layout.js';
 import { glyph, unicode } from './terminal-symbols.js';
 export { displayWidth, fit, wrapWords } from './text-layout.js';
 
-export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'info' | 'reset' | 'details' | 'restart' | 'exit';
+export type MainAction = 'switch' | 'add' | 'update' | 'delete' | 'info' | 'reset' | 'details' | 'restart' | 'antigravity' | 'exit';
 export type AddSource = 'codex' | 'file' | 'browser' | 'back';
 
 const dots = { filled: glyph.filled, empty: glyph.empty };
@@ -146,6 +146,7 @@ export function mainChoices({ credentials, current, authPath = '~/.codex/auth.js
     },
     { value: 'details' as const, name: '位置与连接', key: 'p', description: '查看账号库位置、当前登录文件与本机服务连接' },
     { value: 'restart' as const, name: '重启 codex server', key: 'c', description: '重启 Codex 托管后台服务，可能中断正在运行的任务' },
+    { value: 'antigravity' as const, name: 'Antigravity CLI', key: 'g', description: '保存、导入和切换 agy 的文件凭据' },
     { value: 'exit' as const, name: '退出', key: 'q', description: '退出 codexplus' },
   ];
   const fallback: MainAction = others === 0 || needsBackup(current) ? 'add' : 'switch';

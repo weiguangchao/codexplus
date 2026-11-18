@@ -15,7 +15,7 @@ export async function readOptional(path: string): Promise<string | null> {
   }
 }
 
-export async function writeAtomic({ path, content }: { path: string; content: string }): Promise<void> {
+export async function writeAtomic({ path, content }: { path: string; content: string | Uint8Array }): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
   try {

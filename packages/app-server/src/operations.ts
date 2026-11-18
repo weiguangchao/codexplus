@@ -1,11 +1,12 @@
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { authDigestSchema, browserLoginIdSchema, credentialSchema, saveOptionsSchema, authSchema, protocolVersion,
+import { antigravityAccountSchema, authDigestSchema, browserLoginIdSchema, credentialSchema, saveOptionsSchema, authSchema, protocolVersion,
   resetCardIdSchema, resetRequestIdSchema, ServiceError } from '@weiguangchao/codexplus-shared';
 import { recordAudit, recordCommitted } from './audit.js';
 import type { CurrentLoginStore } from './current-login.js';
 import type { CredentialStore } from './store.js';
 import type { BrowserSessions } from './browser-sessions.js';
+import type { AntigravityLogins } from './antigravity.js';
 import { findCodexProcesses } from './processes.js';
 import { restartCodexServer } from './restart-codex.js';
 import { listResetCards, useResetCard } from './reset-cards.js';
@@ -26,6 +27,10 @@ const operationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal(['login.browser.status', 'login.browser.cancel']), id: browserLoginIdSchema }),
   z.object({ kind: z.literal('login.browser.save'), id: browserLoginIdSchema, ...saveFields }),
   z.object({ kind: z.literal('resetCards.use'), ...credentialFields, cardId: resetCardIdSchema, requestId: resetRequestIdSchema }),
+  z.object({ kind: z.literal('antigravity.status') }),
+  z.object({ kind: z.literal('antigravity.inspect'), path: z.string().trim().min(1) }),
+  z.object({ kind: z.literal('antigravity.save'), path: z.string().trim().min(1).optional(), sourceDigest: authDigestSchema, base: authDigestSchema.nullable() }),
+  z.object({ kind: z.literal('antigravity.switch'), account: antigravityAccountSchema, currentDigest: authDigestSchema.nullable() }),
 ]);
 
 type Operation = z.infer<typeof operationSchema>;
@@ -43,8 +48,8 @@ function parseOperation({ method, params }: { method: string; params: unknown })
   return result.data;
 }
 
-export function createOperations({ store, current, browsers, home, accountRequest, findProcesses = findCodexProcesses, restartServer = restartCodexServer }: {
-  store: CredentialStore; current: CurrentLoginStore; browsers: BrowserSessions; home: string; accountRequest: typeof fetch;
+export function createOperations({ store, current, browsers, antigravity, home, accountRequest, findProcesses = findCodexProcesses, restartServer = restartCodexServer }: {
+  store: CredentialStore; current: CurrentLoginStore; browsers: BrowserSessions; antigravity: AntigravityLogins; home: string; accountRequest: typeof fetch;
   findProcesses?: typeof findCodexProcesses; restartServer?: typeof restartCodexServer;
 }) {
   const client = { id: 'local', name: '本机' };
@@ -79,6 +84,10 @@ export function createOperations({ store, current, browsers, home, accountReques
         case 'login.browser.status': return browsers.status(operation.id);
         case 'login.browser.save': return await current.save({ auth: browsers.auth(operation.id), currentFile: false, options: operation });
         case 'login.browser.cancel': await browsers.cancel(operation.id); return { ok: true };
+        case 'antigravity.status': return await antigravity.status();
+        case 'antigravity.inspect': return await antigravity.inspect(operation.path);
+        case 'antigravity.save': await antigravity.save(operation); return { ok: true };
+        case 'antigravity.switch': await antigravity.switch(operation); return { ok: true };
         case 'credentials.upload': {
           const result = await store.add({ auth: operation.auth, base: operation.base });
           if (result.changed) await recordCommitted({ home, event: '上传', client, subject: { email: result.credential.email } });

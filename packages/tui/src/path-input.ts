@@ -34,6 +34,7 @@ export function pathWindow({ value, cursor, columns }: { value: string; cursor: 
 
 interface PathConfig {
   initial: string;
+  fileName?: string;
   validate(value: string): Promise<string | true>;
 }
 
@@ -90,8 +91,9 @@ export const pathInput = createPrompt<string, PathConfig>((config, done) => {
     update(points.join(''), cursor, rl);
     setError('');
   });
+  const fileName = config.fileName ?? 'auth.json';
   return [
-    `${stepTitle('添加账号', '导入 auth.json', (process.stdout.rows || 24) < 16 ? '' : '粘贴或拖入文件，支持 ~/ 和带空格的路径。')}\n${prefix} ${wrapWords(status === 'loading' ? '正在检查文件…' : 'auth.json 路径', (process.stdout.columns || 80) - 2)}\n${view.text}`,
+    `${stepTitle('添加账号', `导入 ${fileName}`, (process.stdout.rows || 24) < 16 ? '' : '粘贴或拖入文件，支持 ~/ 和带空格的路径。')}\n${prefix} ${wrapWords(status === 'loading' ? '正在检查文件…' : `${fileName} 路径`, (process.stdout.columns || 80) - 2)}\n${view.text}`,
     [error ? inputTheme.style.error(error) : '', styleText('dim', keyHelp(['Enter 添加', 'Ctrl+U 清空左侧', 'Esc 返回'], (process.stdout.columns || 80) - 1).join('\n'))].filter(Boolean).join('\n'),
   ];
 });
